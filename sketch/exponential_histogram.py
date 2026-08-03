@@ -7,6 +7,7 @@ class ExponentialHistogram:
     def __init__(self, window_size: int, relative_error: float):
         self.window_size = window_size
         self.k = math.ceil(1 / relative_error)
+        self._merge_cap = math.ceil(self.k / 2) + 1
         self.buckets: list[Bucket] = []
         self.last = 0
         self.total = 0
@@ -35,7 +36,7 @@ class ExponentialHistogram:
         self._expire(t)
         self.buckets.append(Bucket(t))
         self.total += 1
-        cap = math.ceil(self.k / 2) + 1
+        cap = self._merge_cap
 
         i = len(self.buckets) - 1
         while i > 0:

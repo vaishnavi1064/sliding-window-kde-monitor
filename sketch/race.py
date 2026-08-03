@@ -1,6 +1,6 @@
 import numpy as np
 
-from sketch.angular_hash import AngularHash
+from sketch.angular_hash import AngularHashBank
 
 
 class RACE:
@@ -11,28 +11,20 @@ class RACE:
     """
 
     def __init__(self, rows: int, k: int, dim: int, rng: np.random.Generator | None = None):
-        rng = rng or np.random.default_rng()
         self.rows = rows
-        self.hash_functions = [
-            [AngularHash(dim, rng) for _ in range(k)] for _ in range(rows)
-        ]
+        self.hashes = AngularHashBank(rows, k, dim, rng)
         self.counts: dict[tuple[int, int], int] = {}
 
-    def _cell_code(self, row: int, x) -> int:
-        code = 0
-        for h in self.hash_functions[row]:
-            bit = 1 if h.eval(x) == 1 else 0
-            code = code * 2 + bit
-        return code
-
     def update(self, x) -> None:
+        codes = self.hashes.codes(x)
         for row in range(self.rows):
-            key = (row, self._cell_code(row, x))
+            key = (row, int(codes[row]))
             self.counts[key] = self.counts.get(key, 0) + 1
 
     def query(self, x, chunk_size: int = 5) -> float:
+        codes = self.hashes.codes(x)
         values = np.array(
-            [self.counts.get((row, self._cell_code(row, x)), 0) for row in range(self.rows)],
+            [self.counts.get((row, int(codes[row])), 0) for row in range(self.rows)],
             dtype=float,
         )
         num_chunks = self.rows // chunk_size

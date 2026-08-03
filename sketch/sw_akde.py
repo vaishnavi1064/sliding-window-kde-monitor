@@ -1,6 +1,6 @@
 import numpy as np
 
-from sketch.angular_hash import AngularHash
+from sketch.angular_hash import AngularHashBank
 from sketch.exponential_histogram import ExponentialHistogram
 
 
@@ -14,26 +14,17 @@ class SlidingWindowAngularKDE:
         eh_relative_error: float = 0.1,
         rng: np.random.Generator | None = None,
     ):
-        rng = rng or np.random.default_rng()
         self.rows = rows
         self.k = k
         self.window_size = window_size
         self.eh_relative_error = eh_relative_error
-        self.hash_functions = [
-            [AngularHash(dim, rng) for _ in range(k)] for _ in range(rows)
-        ]
+        self.hashes = AngularHashBank(rows, k, dim, rng)
         self.cells: dict[tuple[int, int], ExponentialHistogram] = {}
 
-    def _cell_code(self, row: int, x) -> int:
-        code = 0
-        for h in self.hash_functions[row]:
-            bit = 1 if h.eval(x) == 1 else 0
-            code = code * 2 + bit
-        return code
-
     def update(self, x, t: int) -> None:
+        codes = self.hashes.codes(x)
         for row in range(self.rows):
-            key = (row, self._cell_code(row, x))
+            key = (row, int(codes[row]))
             eh = self.cells.get(key)
             if eh is None:
                 eh = ExponentialHistogram(self.window_size, self.eh_relative_error)
@@ -46,9 +37,10 @@ class SlidingWindowAngularKDE:
     def query(self, x, t: int) -> float:
         # `t` is the current logical clock, required so cells that have gone
         # cold expire on read rather than reporting a frozen count (Finding F).
+        codes = self.hashes.codes(x)
         total = 0.0
         for row in range(self.rows):
-            eh = self.cells.get((row, self._cell_code(row, x)))
+            eh = self.cells.get((row, int(codes[row])))
             if eh is not None:
                 total += eh.count_estimate(t)
         return total / self.rows
