@@ -26,7 +26,7 @@ import numpy as np
 import pandas as pd
 
 from evaluation.metrics import chance_detection, chance_p_value, evaluate
-from scripts.run_evaluation import cache_path
+from scripts.run_evaluation import cache_path, rescore
 
 # Alarm budgets, as the fraction of time the detector is alerting.
 ALERTING_FRACTIONS = (0.20, 0.10, 0.05, 0.02, 0.01, 0.005, 0.002, 0.001)
@@ -44,7 +44,7 @@ def compare(methods: list[str]) -> None:
             print(f"\n=== {method}: no cached series, skipping ===")
             continue
 
-        scores = series["score"].to_numpy()
+        scores = rescore(series)
         timestamps = series["timestamp"]
         active = scores[scores > 0]
 
@@ -60,7 +60,7 @@ def compare(methods: list[str]) -> None:
             result = evaluate(timestamps, scores, threshold)
             total_alarms = result.false_alarms + result.detected_count
             counts = chance_detection(timestamps, total_alarms)
-            expected = float(np.mean(counts)) if not isinstance(counts, float) else 0.0
+            expected = float(np.mean(counts)) if np.asarray(counts).size else 0.0
             p = chance_p_value(counts, result.detected_count)
             leads = " ".join(
                 f"{e.lead_hours:+.0f}" if e.detected else "miss" for e in result.events

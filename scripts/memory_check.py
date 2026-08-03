@@ -71,13 +71,71 @@ def run(frame: pd.DataFrame, compact: bool) -> dict:
     }
 
 
+def sketch_bytes_by_rows(frame: pd.DataFrame, row_counts: tuple[int, ...]) -> None:
+    """Does the sketch actually save memory here? Compare against storing the window.
+
+    The sketch exists so you never have to hold the window. Exact windowed KDE
+    holds `window_size x dim` floats -- which is *tiny* when the window is short
+    and the data low-dimensional. The sketch's own footprint, by contrast, is
+    independent of dimension but scales with rows. So there is a crossover
+    dimension below which storing the raw window is simply cheaper, and it is
+    worth knowing which side of it a given application sits on.
+    """
+    raw = frame[list(ANALOG_COLUMNS)].to_numpy(dtype=float)
+    dim = len(ANALOG_COLUMNS)
+    exact_bytes = SETTINGS.window_size * dim * 8
+
+    print(f"\n\nsketch footprint vs storing the window "
+          f"(window={SETTINGS.window_size}, dim={dim})")
+    print(f"exact windowed KDE holds {SETTINGS.window_size} x {dim} floats = "
+          f"{exact_bytes / 1e6:.2f} MB\n")
+    print(f"{'rows':>6} {'cells':>10} {'sketch':>11} {'vs exact':>10} "
+          f"{'crossover dim':>14}")
+    print("-" * 58)
+
+    for rows in row_counts:
+        sketch = SlidingWindowEuclideanKDE(
+            rows=rows,
+            k=SETTINGS.k,
+            dim=dim,
+            width=SETTINGS.lsh_width,
+            window_size=SETTINGS.window_size,
+            eh_relative_error=SETTINGS.eh_relative_error,
+            rng=np.random.default_rng(0),
+        )
+        standardizer = WarmupStandardizer(dim, warmup=SETTINGS.warmup)
+        clock = 0
+        for values in raw:
+            standardizer.observe(values)
+            if not standardizer.fitted:
+                continue
+            clock += 1
+            sketch.update(standardizer.transform(values), clock)
+
+        size = deep_size(sketch)
+        # Dimension at which storing the window would cost as much as the sketch.
+        crossover = size / (SETTINGS.window_size * 8)
+        print(f"{rows:>6} {len(sketch.cells):>10,} {size / 1e6:>8.1f} MB "
+              f"{size / exact_bytes:>9.0f}x {crossover:>13,.0f}")
+
+    print("\nThe sketch's footprint does not depend on dimension; exact storage grows")
+    print("with it. Below the crossover dimension, holding the raw window is cheaper")
+    print("than sketching it.")
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--records", type=int, default=400_000)
+    parser.add_argument("--rows-sweep", action="store_true",
+                        help="compare sketch footprint against storing the window")
     args = parser.parse_args()
 
     frame = pd.read_parquet(SETTINGS.parquet_path).iloc[: args.records]
     print(f"{len(frame):,} readings, rows={SETTINGS.rows}, window={SETTINGS.window_size}\n")
+
+    if args.rows_sweep:
+        sketch_bytes_by_rows(frame, (50, 100, 200, 400))
+        return 0
 
     results = []
     for compact in (False, True):

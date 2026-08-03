@@ -200,7 +200,7 @@ def chance_detection(
         w for w in windows if w.event.start <= span_end and w.event.end >= span_start
     ]
     if not windows or n_alarms <= 0:
-        return 0.0, 1.0
+        return np.zeros(0, dtype=int)
 
     total_seconds = (span_end - span_start).total_seconds()
     bounds = np.array(
@@ -226,8 +226,13 @@ def chance_detection(
 
 
 def chance_p_value(counts: np.ndarray, observed: int) -> float:
-    """Fraction of random-alarm trials matching or beating the observed count."""
-    if isinstance(counts, float) or len(counts) == 0:
+    """Fraction of random-alarm trials matching or beating the observed count.
+
+    With no trials (a detector that never alarms) nothing can be concluded, so
+    the p-value is 1 rather than 0 -- silence is not evidence of skill.
+    """
+    counts = np.asarray(counts)
+    if counts.size == 0:
         return 1.0
     return float((counts >= observed).mean())
 

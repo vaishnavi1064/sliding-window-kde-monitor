@@ -7,6 +7,7 @@ import pytest
 from streaming.failures import FAILURES, failure_at
 from streaming.features import (
     ANALOG_COLUMNS,
+    RollingDutyCycle,
     WarmupStandardizer,
     extract,
 )
@@ -36,6 +37,39 @@ class TestFeatures:
         assert np.isnan(values[ANALOG_COLUMNS.index("TP2")])
         assert np.isnan(values[ANALOG_COLUMNS.index("H1")])
         assert not np.isnan(values[ANALOG_COLUMNS.index("TP3")])
+
+
+class TestRollingDutyCycle:
+    def test_reports_fraction_asserted_before_the_window_fills(self):
+        duty = RollingDutyCycle(n_channels=2, window=4)
+        assert duty.update(np.array([1.0, 0.0])).tolist() == [1.0, 0.0]
+        assert duty.update(np.array([0.0, 0.0])).tolist() == [0.5, 0.0]
+
+    def test_old_readings_leave_the_window(self):
+        duty = RollingDutyCycle(n_channels=1, window=3)
+        for _ in range(3):
+            duty.update(np.array([1.0]))
+        assert duty.update(np.array([0.0]))[0] == pytest.approx(2 / 3)
+        assert duty.update(np.array([0.0]))[0] == pytest.approx(1 / 3)
+        assert duty.update(np.array([0.0]))[0] == pytest.approx(0.0)
+
+    def test_matches_a_brute_force_rolling_mean(self):
+        rng = np.random.default_rng(0)
+        window = 25
+        duty = RollingDutyCycle(n_channels=3, window=window)
+        history: list[np.ndarray] = []
+
+        for _ in range(200):
+            values = (rng.random(3) < 0.4).astype(float)
+            history.append(values)
+            expected = np.vstack(history[-window:]).mean(axis=0)
+            assert np.allclose(duty.update(values), expected)
+
+    def test_constant_channel_gives_constant_duty(self):
+        duty = RollingDutyCycle(n_channels=2, window=10)
+        for _ in range(50):
+            result = duty.update(np.array([1.0, 0.0]))
+        assert result.tolist() == [1.0, 0.0]
 
 
 class TestWarmupStandardizer:

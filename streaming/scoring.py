@@ -22,6 +22,18 @@ from collections import deque
 # normally distributed data, so thresholds stay interpretable as "sigmas".
 MAD_TO_SIGMA = 1.4826
 
+# Floor on the robust scale, in log-density units. Without it, a stretch where
+# the smoothed series barely moves drives MAD towards zero and the score towards
+# infinity: measured on real data, 999 samples reached 5.5e6 "sigmas", which
+# wrecked every quantile-based threshold above the 99th percentile. A deviation
+# smaller than this in log space means a sub-0.1% density difference, which is
+# not a resolvable signal regardless of how quiet the baseline was.
+MIN_SCALE = 1e-3
+
+# Scores above this are all equally "certainly anomalous", and letting them run
+# to six figures only destabilises quantiles and dashboards.
+MAX_SCORE = 100.0
+
 
 class RollingAnomalyScorer:
     """Scores smoothed log-density against its own recent distribution.
@@ -98,8 +110,6 @@ class RollingAnomalyScorer:
 
         median = statistics.median(self.history)
         mad = statistics.median([abs(v - median) for v in self.history])
-        scale = MAD_TO_SIGMA * mad
-        if scale < 1e-12:
-            return 0.0
+        scale = max(MAD_TO_SIGMA * mad, MIN_SCALE)
 
-        return max(0.0, (median - self.smoothed) / scale)
+        return min(max(0.0, (median - self.smoothed) / scale), MAX_SCORE)

@@ -41,15 +41,24 @@ from sketch.p_stable import l2_collision_probability_vectorized
 from sketch.race import RACE
 from sketch.sw_akde import SlidingWindowEuclideanKDE
 from streaming.config import SETTINGS
-from streaming.features import ANALOG_COLUMNS, WarmupStandardizer
+from streaming.features import (
+    ANALOG_COLUMNS,
+    DIGITAL_COLUMNS,
+    FEATURE_SETS,
+    RollingDutyCycle,
+    WarmupStandardizer,
+    feature_dimension,
+)
 from streaming.scoring import RollingAnomalyScorer
 
 CACHE_DIR = Path(__file__).resolve().parent.parent / "data"
 
 
-def cache_path(method: str) -> Path:
+def cache_path(method: str, feature_set: str = "analog") -> Path:
+    suffix = "" if feature_set == "analog" else f"_{feature_set.replace('+', '-')}"
     return CACHE_DIR / (
-        f"eval_{method}_rows{SETTINGS.rows}_k{SETTINGS.k}_w{SETTINGS.window_size}.parquet"
+        f"eval_{method}_rows{SETTINGS.rows}_k{SETTINGS.k}_w{SETTINGS.window_size}"
+        f"{suffix}.parquet"
     )
 
 
@@ -86,8 +95,18 @@ class ExactWindowedKDE:
         return float((probabilities**self.k).sum())
 
 
-def build_score_series(method: str, frame: pd.DataFrame) -> pd.DataFrame:
-    raw = frame[list(ANALOG_COLUMNS)].to_numpy(dtype=float)
+def build_score_series(
+    method: str, frame: pd.DataFrame, feature_set: str = "analog"
+) -> pd.DataFrame:
+    analog_columns, digital_columns = FEATURE_SETS[feature_set]
+    raw = frame[list(analog_columns)].to_numpy(dtype=float)
+    digital = (
+        frame[list(digital_columns)].to_numpy(dtype=float)
+        if digital_columns
+        else None
+    )
+    duty = RollingDutyCycle(len(digital_columns)) if digital_columns else None
+    dim = feature_dimension(feature_set)
     timestamps = frame["timestamp"].to_numpy()
 
     rng = np.random.default_rng(0)
@@ -95,7 +114,7 @@ def build_score_series(method: str, frame: pd.DataFrame) -> pd.DataFrame:
         model = SlidingWindowEuclideanKDE(
             rows=SETTINGS.rows,
             k=SETTINGS.k,
-            dim=len(ANALOG_COLUMNS),
+            dim=dim,
             width=SETTINGS.lsh_width,
             window_size=SETTINGS.window_size,
             eh_relative_error=SETTINGS.eh_relative_error,
@@ -105,7 +124,7 @@ def build_score_series(method: str, frame: pd.DataFrame) -> pd.DataFrame:
     elif method == "exact":
         model = ExactWindowedKDE(
             window_size=SETTINGS.window_size,
-            dim=len(ANALOG_COLUMNS),
+            dim=dim,
             width=SETTINGS.lsh_width,
             k=SETTINGS.k,
         )
@@ -113,12 +132,12 @@ def build_score_series(method: str, frame: pd.DataFrame) -> pd.DataFrame:
     elif method == "race":
         # Un-windowed RACE: same LSH geometry, integer counters, nothing ever
         # expires. Isolates the contribution of sliding-window semantics.
-        model = RACE(rows=SETTINGS.rows, k=SETTINGS.k, dim=len(ANALOG_COLUMNS), rng=rng)
+        model = RACE(rows=SETTINGS.rows, k=SETTINGS.k, dim=dim, rng=rng)
         window_size = SETTINGS.window_size
     else:
         raise ValueError(f"unknown method: {method}")
 
-    standardizer = WarmupStandardizer(len(ANALOG_COLUMNS), warmup=SETTINGS.warmup)
+    standardizer = WarmupStandardizer(dim, warmup=SETTINGS.warmup)
     scorer = RollingAnomalyScorer()
 
     out_times: list = []
@@ -130,6 +149,8 @@ def build_score_series(method: str, frame: pd.DataFrame) -> pd.DataFrame:
 
     for index in range(len(raw)):
         values = raw[index]
+        if duty is not None:
+            values = np.concatenate([values, duty.update(digital[index])])
         standardizer.observe(values)
         if not standardizer.fitted:
             continue
@@ -171,8 +192,23 @@ def build_score_series(method: str, frame: pd.DataFrame) -> pd.DataFrame:
     )
 
 
+def rescore(series: pd.DataFrame, window_size: int = None) -> np.ndarray:
+    """Recompute scores from cached densities.
+
+    Density is the expensive part (a full replay); scoring is microseconds.
+    Deriving scores on read means a change to the scorer never costs another
+    25-minute pass, and it keeps every cached series comparable under one
+    scorer version.
+    """
+    scorer = RollingAnomalyScorer()
+    densities = series["density"].to_numpy()
+    # The cached series already starts at the point the window filled, so every
+    # sample here is comparable.
+    return np.array([scorer.score(float(d)) for d in densities])
+
+
 def report(series: pd.DataFrame, method: str) -> None:
-    scores = series["score"].to_numpy()
+    scores = rescore(series)
     valid = scores > 0
     print(f"\n=== {method} ===")
     print(f"score samples: {len(scores):,} ({int(valid.sum()):,} after burn-in)")
@@ -199,7 +235,7 @@ def report(series: pd.DataFrame, method: str) -> None:
         counts = chance_detection(
             series["timestamp"], result.false_alarms + result.detected_count
         )
-        expected = float(np.mean(counts)) if not isinstance(counts, float) else 0.0
+        expected = float(np.mean(counts)) if np.asarray(counts).size else 0.0
         p = chance_p_value(counts, result.detected_count)
         print(f"{result.threshold:>7.2f} {result.detected_count:>5}/4 "
               f"{result.false_alarms_per_day:>11.2f} {result.false_alarms:>7} "
@@ -219,11 +255,12 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--method", choices=("swakde", "race", "exact"), default="swakde")
     parser.add_argument("--records", type=int, default=0, help="0 = whole dataset")
+    parser.add_argument("--features", choices=tuple(FEATURE_SETS), default="analog")
     parser.add_argument("--report-only", action="store_true",
                         help="use the cached score series, do not replay")
     args = parser.parse_args()
 
-    path = cache_path(args.method)
+    path = cache_path(args.method, args.features)
     if args.report_only or path.exists():
         if not path.exists():
             raise SystemExit(f"no cache at {path}; run without --report-only first")
@@ -236,12 +273,13 @@ def main() -> int:
         if args.records:
             frame = frame.iloc[: args.records]
         print(f"Replaying {len(frame):,} readings through {args.method} "
-              f"(rows={SETTINGS.rows}, k={SETTINGS.k}, window={SETTINGS.window_size}) ...")
-        series = build_score_series(args.method, frame)
+              f"(rows={SETTINGS.rows}, k={SETTINGS.k}, window={SETTINGS.window_size}, "
+              f"features={args.features}, dim={feature_dimension(args.features)}) ...")
+        series = build_score_series(args.method, frame, args.features)
         series.to_parquet(path, index=False)
         print(f"Cached score series -> {path.name}")
 
-    report(series, args.method)
+    report(series, f"{args.method} [{args.features}]")
     return 0
 
 

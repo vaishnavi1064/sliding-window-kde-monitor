@@ -1,6 +1,6 @@
 PYTHON := .venv/Scripts/python.exe
 
-.PHONY: help venv test bench tune memcheck evaluate data up down logs replay anomaly clean
+.PHONY: help venv test bench tune memcheck memcheck-rows evaluate data up down logs replay anomaly clean
 
 help:
 	@echo "venv     - create the 3.12 venv and install the package with dev+streaming deps"
@@ -41,12 +41,18 @@ tune:
 memcheck:
 	$(PYTHON) -m scripts.memory_check
 
+# Is the sketch actually cheaper than storing the window? Depends on dimension.
+memcheck-rows:
+	$(PYTHON) -m scripts.memory_check --records 150000 --rows-sweep
+
 # Full-dataset evaluation against the four documented failures.
 evaluate:
 	$(PYTHON) -m scripts.run_evaluation --method swakde
 	$(PYTHON) -m scripts.run_evaluation --method race
 	$(PYTHON) -m scripts.run_evaluation --method exact
 	$(PYTHON) -m scripts.compare_methods
+	$(PYTHON) -m scripts.horizon_sensitivity
+	$(PYTHON) -m scripts.diagnose_failures
 
 data:
 	$(PYTHON) -m scripts.download_data

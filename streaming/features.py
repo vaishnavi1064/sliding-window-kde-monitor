@@ -39,6 +39,41 @@ PLAUSIBLE_RANGES: dict[str, tuple[float, float]] = {
 }
 
 
+class RollingDutyCycle:
+    """Rolling fraction of recent readings for which each digital signal is asserted.
+
+    The digital channels are binary per reading, which is why they were kept out
+    of the density feature vector: a flag contributes almost no geometry. Their
+    *duty cycle* over a window is a different quantity entirely -- continuous,
+    and physically meaningful, since a unit with an air leak has to work
+    differently to hold pressure.
+
+    Diagnosis motivated this (scripts/diagnose_failures.py): two of the four
+    documented failures have almost no signature in the analog channels in the
+    24 hours beforehand (largest effect 0.62 and 0.24 standard deviations), while
+    their digital duty cycles do shift -- Oil_level 0.901 -> 1.000,
+    Caudal_impulses 0.935 -> 1.000, DV_eletric 0.143 -> 0.024 or 0.393.
+    """
+
+    def __init__(self, n_channels: int, window: int = 360):
+        self.window = window
+        self.buffer = np.zeros((window, n_channels))
+        self.count = 0
+        self.cursor = 0
+        self._total = np.zeros(n_channels)
+
+    def update(self, values: np.ndarray) -> np.ndarray:
+        """Record one reading's digital values; return the current duty cycles."""
+        if self.count == self.window:
+            self._total -= self.buffer[self.cursor]
+        else:
+            self.count += 1
+        self.buffer[self.cursor] = values
+        self._total += values
+        self.cursor = (self.cursor + 1) % self.window
+        return self._total / self.count
+
+
 class WarmupStandardizer:
     """Standardizes features using statistics frozen after a warmup period.
 
@@ -74,6 +109,21 @@ class WarmupStandardizer:
 
     def transform(self, x: np.ndarray) -> np.ndarray:
         return (x - self.mean) / self.scale
+
+
+FEATURE_SETS = {
+    # What Phases 2 and 3 evaluated first: the seven analog channels.
+    "analog": (ANALOG_COLUMNS, ()),
+    # Analog plus rolling duty cycles of the digital channels. Chosen after
+    # diagnosing which failures the analog channels can see -- see the honesty
+    # note in docs/EVALUATION.md about selecting features on four events.
+    "analog+duty": (ANALOG_COLUMNS, DIGITAL_COLUMNS),
+}
+
+
+def feature_dimension(feature_set: str) -> int:
+    analog, digital = FEATURE_SETS[feature_set]
+    return len(analog) + len(digital)
 
 
 def extract(record: dict, columns: tuple[str, ...] = ANALOG_COLUMNS) -> np.ndarray:

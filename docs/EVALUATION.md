@@ -111,6 +111,122 @@ than informative. Dropping it, and saying so, is more honest than shipping a
 "TAKDE" that is substantially ours. Revisiting it properly is a scoped piece of
 work in its own right.
 
+## Results
+
+All figures from the full 1,516,948-reading replay, `rows=400`, `k=3`,
+`window=3600`, seven analog channels.
+
+### 1. The sketch matches exact windowed KDE almost exactly
+
+Compared at equal alerting fractions:
+
+| alerting | swakde events / p | exact events / p | race events / p |
+|---|---|---|---|
+| 20% | 4/4, p=0.567 | 4/4, p=0.585 | 4/4, p=0.495 |
+| 10% | 4/4, p=0.290 | 4/4, p=0.296 | 4/4, p=0.172 |
+| **5%** | **4/4, p=0.050** | **4/4, p=0.049** | 3/4, p=0.284 |
+| 2% | 2/4, p=0.194 | 2/4, p=0.177 | 2/4, p=0.315 |
+| 1% | 2/4, p=0.018 | 2/4, p=0.018 | 2/4, p=0.151 |
+
+SW-AKDE tracks exact KDE to within noise at every operating point — 0.050 versus
+0.049 at the 5% budget. **Approximation costs essentially nothing in detection
+quality**, which is the positive result for the engineering lever.
+
+Un-windowed RACE is meaningfully worse where it matters: at the 5% budget it
+finds 3/4 rather than 4/4, and its p-values never get close. Sliding-window
+semantics do buy something real here, which supports the source paper's claim.
+
+### 2. It detects at onset; it does not predict
+
+The prediction horizon changes the story completely, so it has to be reported
+rather than chosen:
+
+| horizon | events | mean lead | p | per-event lead |
+|---|---|---|---|---|
+| 3h | 4/4 | −0.6h | **0.004** | −2, −0, −0, −0 |
+| 6h | 4/4 | −0.6h | 0.009 | −2, −0, −0, −0 |
+| 12h | 4/4 | −0.6h | 0.024 | −2, −0, −0, −0 |
+| 24h | 4/4 | +10.1h | 0.049 | +19, +22, −0, −0 |
+| 48h | 4/4 | +27.2h | 0.135 | +19, +43, +47, −0 |
+
+At a tight 3-hour horizon the detector finds all four failures with p = 0.004 —
+clearly better than chance. But the lead times are **≈0**: it fires *as* each
+failure begins. The large positive leads only appear once the horizon is widened,
+and they vanish at 3h, which means they are the wider window catching unrelated
+alarms rather than genuine early warning.
+
+**This is a detection system, not a prediction system, on this data.** The
+"+17h mean lead" that a naive reading of the 24h row would support is not
+supported once chance is accounted for.
+
+Caveat: this table scans 5 horizons x 5 thresholds, so quoting the best cell is
+multiple comparisons over four events. The low values cluster consistently at
+tight horizons rather than appearing in one lucky cell, which is more
+reassuring than a single p, but strict Bonferroni over 25 cells (α = 0.002)
+would not pass.
+
+### 3. Why detection is limited: half the failures are invisible in these channels
+
+`scripts/diagnose_failures.py` measures each channel's standardized shift in the
+24 hours before each failure, against normal operation:
+
+| failure | largest analog effect | verdict |
+|---|---|---|
+| failure-1 | Oil_temperature −1.91σ | clearly visible |
+| failure-2 | Oil_temperature +0.62σ | barely visible |
+| failure-3 | Oil_temperature +0.24σ | not visible |
+| failure-4 | Oil_temperature +1.67σ | clearly visible |
+
+Two of the four failures have essentially no analog signature beforehand. No
+density-based detector on these channels can predict them, because the
+information is not there.
+
+The eight **digital** channels do shift (`Oil_level` 0.901 → 1.000,
+`Caudal_impulses` 0.935 → 1.000, `DV_eletric` 0.143 → 0.024 or 0.393), so we
+added their rolling duty cycles as features. **It made things worse** — best p
+went from 0.108 to 0.193. Going from 7 to 15 dimensions diluted the density
+estimate faster than the extra signal helped, which is the ordinary curse of
+dimensionality for KDE. Reported as a failed attempt rather than quietly
+dropped.
+
+Honesty note: those duty-cycle features were chosen *after* inspecting the four
+events. With n=4 that is a real overfitting risk, and it is one reason not to
+keep iterating on feature selection here.
+
+### 4. The uncomfortable one: at this dimensionality the sketch costs more memory than storing the window
+
+The sketch exists so you never have to hold the window. But its footprint is
+independent of dimension while exact storage grows with it, so there is a
+crossover — and MetroPT sits on the wrong side of it.
+
+Measured (`make memcheck-rows`), `window=3600`, `dim=7`:
+
+| rows | live cells | sketch | vs exact | crossover dimension |
+|---:|---:|---:|---:|---:|
+| 50 | 7,398 | 5.2 MB | 26x | 179 |
+| 100 | 15,383 | 12.0 MB | 60x | 418 |
+| 200 | 29,849 | 23.6 MB | 117x | 819 |
+| 400 | 60,330 | 47.5 MB | 236x | 1,650 |
+
+Exact windowed KDE holds 3600 x 7 floats — **0.20 MB**. The sketch needs
+5–48 MB for the same accuracy.
+
+So on this workload the sketch is **26–236x more expensive than the thing it is
+supposed to replace**, while detecting no better. Its advantage needs roughly
+180 dimensions (at 50 rows) to 1,650 (at 400 rows) before storing the raw window
+becomes the costlier option.
+
+That is consistent with the source paper's own experiments, which used 103-,
+200- and 384-dimensional data — comfortably inside the useful regime. A
+seven-channel sensor feed is not. **The method is sound; this application is
+outside the regime where it pays off.**
+
+This does not undo the engineering work — the port is correct, faster, and
+bounded, and it uncovered eight real defects. But an honest application study
+has to report that the algorithm was applied to a problem its central advantage
+does not address, and that a far simpler exact computation would be the right
+engineering choice for MetroPT specifically.
+
 ## Reproducing
 
 ```bash
