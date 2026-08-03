@@ -70,6 +70,39 @@ update time.
 | 1600 | 286 | 788 | 3,493 | 88.3 min |
 | 3200 | 112 | 320 | 8,964 | 226.6 min |
 
+## Cell reclamation — the memory half of Finding F
+
+Found by running the full dataset rather than a benchmark: throughput decayed
+from ~810 to ~300 updates/s part way through 1.5M readings while the process
+reached **2.7 GB**. Not a leak in the ordinary sense — a consequence of the
+sketch's own design.
+
+Expiry is lazy and per-cell: a histogram only prunes itself when something
+touches it. A cell that goes cold is never touched again, so it keeps its
+buckets forever. The published space bound `O(RW/eps · log²N)` counts a **dense**
+`R × W` array, where an unused cell costs nothing extra. Every real
+implementation — the reference's and ours — stores cells **sparsely**, because
+almost all of them are empty. Nothing then bounds the dictionary: it gains one
+entry per distinct cell ever visited, so memory tracks *readings seen* rather
+than *window size*.
+
+`SlidingWindowKDE.compact` drops fully expired cells once per window. That is
+semantically free (such a cell contributes exactly zero to any query) and O(1)
+amortised per update. Measured over 400,000 MetroPT-3 readings at `rows=400`,
+`window=3600` (`make memcheck`):
+
+| | cells | cell memory | throughput | deceleration |
+|---|---:|---:|---:|---:|
+| without compaction | 1,859,317 | 666 MB | 794/s | 1.34x |
+| with compaction | 156,644 | 83 MB | 922/s | 1.18x |
+| | **11.9x fewer** | **8.0x smaller** | **1.2x faster** | |
+
+4.8M dead cells were reclaimed over the run. The important number is not the
+ratio but the *shape*: with compaction the live cell count settles at a level
+set by the window, while without it the count grows with every reading ever
+seen — which is what took the full-dataset run to 2.7 GB. Without this, the
+sublinear-memory claim does not survive contact with a sparse implementation.
+
 ## What this means downstream
 
 - **Phase 2 (streaming) is not throughput-constrained.** MetroPT-3 arrives every 10s (0.1 Hz); even at

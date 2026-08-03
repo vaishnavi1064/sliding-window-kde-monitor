@@ -30,14 +30,30 @@ We do not claim a new algorithm.
 | 0 | Repo, reference audit | Done |
 | 1 | Validated pure-Python sketch (angular kernel) | Done |
 | 1.5 | Euclidean kernel; profiling + 2.9x vectorization | Done |
-| 2 | Kafka streaming, Prometheus/Grafana/Alertmanager | In progress |
-| 3 | Anomaly detector + MetroPT evaluation | Planned |
+| 2 | Kafka streaming, Prometheus/Grafana/Alertmanager | Done — alert verified firing end to end |
+| 3 | Anomaly detector + MetroPT evaluation | In progress |
 | 4 | MCP server | Planned |
 | 5 | C++17 + pybind11 optimized core | Planned |
 | 6 | Adaptive window size (research extension) | Stretch |
 
-44 tests green. Engineering log in [`docs/PERFORMANCE.md`](docs/PERFORMANCE.md); findings from
-running against the real data in [`docs/DATA_NOTES.md`](docs/DATA_NOTES.md).
+61 tests green. Engineering log in [`docs/PERFORMANCE.md`](docs/PERFORMANCE.md); findings from
+running against the real data in [`docs/DATA_NOTES.md`](docs/DATA_NOTES.md); evaluation
+methodology in [`docs/EVALUATION.md`](docs/EVALUATION.md).
+
+### Phase 3 progress
+
+Done: evaluation harness with chance calibration; cell reclamation (11.9× fewer cells,
+8× less memory); un-windowed RACE and exact-windowed-KDE baselines measured; TAKDE
+dropped with reasons recorded.
+
+Remaining: the SW-AKDE full-dataset pass (~25 min, `make evaluate`), the three-way
+comparison, and the write-up.
+
+Headline so far, and it is a caution rather than a win: **both baselines detect 4/4
+failures yet neither is distinguishable from chance.** RACE reaches p = 0.399 while
+alerting 17% of the time; exact KDE's best point is p = 0.108. Since exact KDE involves
+no sketch at all, the ceiling is set by the detector formulation and feature set, not by
+the sketch's approximation quality.
 
 ## Correctness
 

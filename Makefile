@@ -1,12 +1,14 @@
 PYTHON := .venv/Scripts/python.exe
 
-.PHONY: help venv test bench tune data up down logs replay anomaly clean
+.PHONY: help venv test bench tune memcheck evaluate data up down logs replay anomaly clean
 
 help:
 	@echo "venv     - create the 3.12 venv and install the package with dev+streaming deps"
 	@echo "test     - run all validation tiers"
 	@echo "bench    - benchmark sketch update/query throughput"
 	@echo "tune     - sweep detector parameters against real data"
+	@echo "memcheck - measure what cell reclamation buys"
+	@echo "evaluate - full evaluation vs the four documented failures"
 	@echo "data     - download MetroPT-3 and convert to Parquet (~208 MB, not committed)"
 	@echo "up       - start the monitoring stack (Kafka, consumer, Prometheus, Grafana, Alertmanager, Postgres)"
 	@echo "replay   - stream MetroPT-3 into Kafka"
@@ -32,6 +34,19 @@ bench:
 # from minutes-long Docker round trips. Seeds the Phase 3 evaluation harness.
 tune:
 	$(PYTHON) -m scripts.tune_detector
+
+# Quantifies cell reclamation: without it the sparse cell dictionary grows
+# one entry per distinct cell ever visited, so memory tracks readings seen
+# rather than window size.
+memcheck:
+	$(PYTHON) -m scripts.memory_check
+
+# Full-dataset evaluation against the four documented failures.
+evaluate:
+	$(PYTHON) -m scripts.run_evaluation --method swakde
+	$(PYTHON) -m scripts.run_evaluation --method race
+	$(PYTHON) -m scripts.run_evaluation --method exact
+	$(PYTHON) -m scripts.compare_methods
 
 data:
 	$(PYTHON) -m scripts.download_data
