@@ -209,23 +209,81 @@ Measured (`make memcheck-rows`), `window=3600`, `dim=7`:
 | 400 | 60,330 | 47.5 MB | 236x | 1,650 |
 
 Exact windowed KDE holds 3600 x 7 floats — **0.20 MB**. The sketch needs
-5–48 MB for the same accuracy.
+5–48 MB for the same detection quality. On this workload it is **26–236x more
+expensive than the thing it is supposed to replace.**
 
-So on this workload the sketch is **26–236x more expensive than the thing it is
-supposed to replace**, while detecting no better. Its advantage needs roughly
-180 dimensions (at 50 rows) to 1,650 (at 400 rows) before storing the raw window
-becomes the costlier option.
+#### The boundary, as a rule
 
-That is consistent with the source paper's own experiments, which used 103-,
-200- and 384-dimensional data — comfortably inside the useful regime. A
-seven-channel sensor feed is not. **The method is sound; this application is
-outside the regime where it pays off.**
+Since this is the contribution rather than a footnote, it is worth stating
+structurally. The sketch's footprint is
 
-This does not undo the engineering work — the port is correct, faster, and
-bounded, and it uncovered eight real defects. But an honest application study
-has to report that the algorithm was applied to a problem its central advantage
-does not address, and that a far simpler exact computation would be the right
-engineering choice for MetroPT specifically.
+```
+sketch_bytes = rows x cells_per_row x bytes_per_cell        (independent of dim)
+exact_bytes  = window x dim x 8                             (linear in dim)
+```
+
+so the dimension at which they meet is
+
+```
+                 rows x cells_per_row(window) x bytes_per_cell
+crossover_dim =  --------------------------------------------
+                              window x 8
+```
+
+Two measured facts make this usable (`make memcheck-crossover`):
+
+- **`bytes_per_cell` is constant**, ~590–800 bytes across every configuration —
+  an exponential histogram plus its bucket objects.
+- **`cells_per_row` depends on the window, not on rows** — it is how many
+  distinct LSH cells the window's points occupy, a property of the data. So
+  crossover is *linear in rows*.
+
+| window | cells/row | crossover / rows |
+|---:|---:|---:|
+| 900 | 80 | 6.7 |
+| 1800 | 120 | 5.5 |
+| 3600 | 206 | 5.0 |
+| 7200 | 242 | 3.4 |
+
+`cells_per_row` grows sub-linearly in the window (roughly `window^0.55`) while
+exact storage grows linearly, so **longer windows favour the sketch** — the
+coefficient falls from 6.7 to 3.4 as the window goes 900 → 7200. As a working
+rule at these window sizes:
+
+> **The sketch only saves memory when `dim` is greater than about `5 x rows`.**
+
+#### Why that is an awkward rule
+
+Accuracy needs rows. The source paper sweeps 100–3,200 of them, and our own
+sweeps show error falling with row count. But memory is linear in rows while the
+benefit is not — so **the dimension required to justify the sketch grows with the
+accuracy you demand.** At 100 rows you need ~500 dimensions; at 400 rows,
+~1,650. That tension is not discussed in the paper, and it is the main practical
+thing we can add.
+
+It is consistent with the paper's own experiments, which used 103-, 200- and
+384-dimensional data at modest row counts — inside the useful regime. A
+seven-channel sensor feed is two orders of magnitude outside it.
+
+#### What this means
+
+**The method is sound; this application is outside the regime where it pays
+off.** For MetroPT specifically, exact windowed KDE is simpler, 26–236x smaller,
+and detects identically — it is the correct engineering choice, and we would
+recommend it over our own sketch here.
+
+That is a negative result for the application, and we are reporting it as the
+finding rather than working around it. It does not undo the engineering: the
+port is correct, 2.9x faster than the naive version, memory-bounded where the
+reference was not, and it surfaced eight real defects in the source material.
+What it does mean is that "apply a sublinear sketch to industrial sensor data"
+was the wrong pairing, and the useful contribution is knowing *where the line
+is* — which now takes a measured answer rather than an assumed one.
+
+Directions that would put an application on the right side of the line, none of
+them pursued here: high-dimensional embeddings of sensor windows (lag embedding
+across channels, spectral features), many assets sharing one sketch, or genuinely
+high-dimensional streams of the kind the paper targets.
 
 ## Reproducing
 

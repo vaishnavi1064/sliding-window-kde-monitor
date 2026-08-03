@@ -40,20 +40,39 @@ We do not claim a new algorithm.
 running against the real data in [`docs/DATA_NOTES.md`](docs/DATA_NOTES.md); evaluation
 methodology in [`docs/EVALUATION.md`](docs/EVALUATION.md).
 
-### Phase 3 progress
+## Headline result
 
-Done: evaluation harness with chance calibration; cell reclamation (11.9× fewer cells,
-8× less memory); un-windowed RACE and exact-windowed-KDE baselines measured; TAKDE
-dropped with reasons recorded.
+Full details in [`docs/EVALUATION.md`](docs/EVALUATION.md). Three things, and the
+third is the one that matters.
 
-Remaining: the SW-AKDE full-dataset pass (~25 min, `make evaluate`), the three-way
-comparison, and the write-up.
+**The sketch works, and matches exact windowed KDE to within noise.** At equal alarm
+budgets, SW-AKDE and brute-force exact KDE agree at every operating point (4/4 failures
+at p = 0.050 versus p = 0.049). Un-windowed RACE is genuinely worse (3/4 at the same
+budget), so sliding-window semantics do buy something real.
 
-Headline so far, and it is a caution rather than a win: **both baselines detect 4/4
-failures yet neither is distinguishable from chance.** RACE reaches p = 0.399 while
-alerting 17% of the time; exact KDE's best point is p = 0.108. Since exact KDE involves
-no sketch at all, the ceiling is set by the detector formulation and feature set, not by
-the sketch's approximation quality.
+**It detects at onset, but does not predict.** All four documented failures are found at
+a 3-hour horizon with p = 0.004 — clearly better than chance — but with lead times of
+about zero. The large positive leads that appear at wider horizons vanish at 3h, meaning
+they were the wider window catching unrelated alarms. Two of the four failures have
+almost no signature in these sensors beforehand (+0.62σ and +0.24σ), so no
+density-based detector could predict them.
+
+**At seven channels, the sketch costs 26–236× more memory than simply storing the
+window** — and this is the contribution. Its footprint is independent of dimension while
+exact storage grows with it, so there is a crossover, measured here at roughly
+
+> `dim > 5 × rows`
+
+Exact windowed KDE needs 0.20 MB for MetroPT; the sketch needs 5–48 MB for the same
+detection quality. Because accuracy demands rows and memory is linear in rows, **the
+dimension required to justify the sketch grows with the accuracy you want** — a tension
+the source paper does not discuss. Its own experiments used 103-, 200- and
+384-dimensional data, comfortably inside the useful regime; a seven-channel sensor feed
+is two orders of magnitude outside it.
+
+So for MetroPT specifically we would recommend exact windowed KDE over our own sketch.
+We report that boundary rather than engineering around it: knowing where the line sits,
+measured, is more useful than a demonstration that avoided the question.
 
 ## Correctness
 

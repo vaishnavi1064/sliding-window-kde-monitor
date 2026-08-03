@@ -123,15 +123,76 @@ def sketch_bytes_by_rows(frame: pd.DataFrame, row_counts: tuple[int, ...]) -> No
     print("than sketching it.")
 
 
+def crossover_sweep(
+    frame: pd.DataFrame, row_counts: tuple[int, ...], windows: tuple[int, ...]
+) -> None:
+    """Map the dimension above which sketching beats storing the window.
+
+    The sketch's footprint is `rows x cells_per_row x bytes_per_cell` and does
+    not depend on dimension. Storing the window costs `window x dim x 8`. So
+
+        crossover_dim = rows x cells_per_row(window) x bytes_per_cell
+                        ---------------------------------------------
+                                        window x 8
+
+    `cells_per_row` is how many distinct LSH cells the window's points occupy,
+    which is a property of the *data*, not of rows -- which is why crossover
+    scales linearly in rows. Measuring how it scales with the window is what
+    turns this into a usable rule rather than a single number.
+    """
+    raw = frame[list(ANALOG_COLUMNS)].to_numpy(dtype=float)
+    dim = len(ANALOG_COLUMNS)
+
+    print(f"\n\ncrossover dimension: above this, sketching is cheaper than "
+          f"storing the window\n")
+    print(f"{'window':>8} {'rows':>6} {'cells/row':>10} {'B/cell':>8} "
+          f"{'sketch':>10} {'exact':>10} {'crossover':>10}")
+    print("-" * 70)
+
+    for window in windows:
+        for rows in row_counts:
+            sketch = SlidingWindowEuclideanKDE(
+                rows=rows,
+                k=SETTINGS.k,
+                dim=dim,
+                width=SETTINGS.lsh_width,
+                window_size=window,
+                eh_relative_error=SETTINGS.eh_relative_error,
+                rng=np.random.default_rng(0),
+            )
+            standardizer = WarmupStandardizer(dim, warmup=SETTINGS.warmup)
+            clock = 0
+            for values in raw:
+                standardizer.observe(values)
+                if not standardizer.fitted:
+                    continue
+                clock += 1
+                sketch.update(standardizer.transform(values), clock)
+
+            size = deep_size(sketch)
+            cells = len(sketch.cells)
+            exact = window * dim * 8
+            print(f"{window:>8} {rows:>6} {cells / rows:>10.0f} "
+                  f"{size / max(cells, 1):>8.0f} {size / 1e6:>7.1f} MB "
+                  f"{exact / 1e6:>7.2f} MB {size / (window * 8):>10.0f}")
+        print()
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--records", type=int, default=400_000)
     parser.add_argument("--rows-sweep", action="store_true",
                         help="compare sketch footprint against storing the window")
+    parser.add_argument("--crossover", action="store_true",
+                        help="map the crossover dimension over rows and window")
     args = parser.parse_args()
 
     frame = pd.read_parquet(SETTINGS.parquet_path).iloc[: args.records]
     print(f"{len(frame):,} readings, rows={SETTINGS.rows}, window={SETTINGS.window_size}\n")
+
+    if args.crossover:
+        crossover_sweep(frame, (50, 100, 200), (900, 1800, 3600, 7200))
+        return 0
 
     if args.rows_sweep:
         sketch_bytes_by_rows(frame, (50, 100, 200, 400))

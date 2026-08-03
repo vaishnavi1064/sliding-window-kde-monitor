@@ -1,6 +1,6 @@
 PYTHON := .venv/Scripts/python.exe
 
-.PHONY: help venv test bench tune memcheck memcheck-rows evaluate data up down logs replay anomaly clean
+.PHONY: help venv test bench tune memcheck memcheck-rows memcheck-crossover evaluate data up down logs replay anomaly clean
 
 help:
 	@echo "venv     - create the 3.12 venv and install the package with dev+streaming deps"
@@ -44,6 +44,11 @@ memcheck:
 # Is the sketch actually cheaper than storing the window? Depends on dimension.
 memcheck-rows:
 	$(PYTHON) -m scripts.memory_check --records 150000 --rows-sweep
+
+# Maps the dimension above which sketching beats storing the window - the
+# applicability boundary that is Phase 3's main reportable finding.
+memcheck-crossover:
+	$(PYTHON) -m scripts.memory_check --records 120000 --crossover
 
 # Full-dataset evaluation against the four documented failures.
 evaluate:

@@ -38,7 +38,7 @@ The novelty they claim: replacing each RACE integer counter with an Exponential 
 Re-implementing the paper as-is = **no novelty** (their code exists). Our value is entirely in what they did NOT do:
 
 1. **Lever 1 — Engineering (CORE).** No optimized, genuinely-streaming, throughput-benchmarked, or deployed implementation exists. We build a clean, tested one (Python reference port first, then an optimized C++ core).
-2. **Lever 2 — Application (CORE).** They never applied this to industrial-sensor anomaly detection. We do (MetroPT), evaluated against ground-truth failures with precision/recall and detection lead time.
+2. **Lever 2 — Application (CORE).** They never applied this to industrial-sensor anomaly detection. We do (MetroPT), evaluated against ground-truth failures. **Outcome (measured, Phase 3):** the sketch matches exact windowed KDE's detection quality to within noise, and detects all four documented failures at onset (p=0.004) — but at MetroPT's seven channels it costs **26–236x more memory than simply storing the window**, because the crossover is around `dim > 5 x rows`. The application therefore sits outside the regime where the algorithm's central advantage exists. We report that boundary as the contribution rather than working around it; see `docs/EVALUATION.md`. Do not describe Lever 2 as a straightforward success.
 3. **Lever 3 — Research extension (OPTIONAL STRETCH).** The paper's future-work flags **adaptive sliding-window-size selection** from the data distribution. Attempt only after Levers 1–2 are solid.
 
 MVP scope = Levers 1–2. Lever 3 is a stretch for depth / publishability.
