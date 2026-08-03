@@ -128,6 +128,12 @@ Compared at equal alerting fractions:
 | 2% | 2/4, p=0.194 | 2/4, p=0.177 | 2/4, p=0.315 |
 | 1% | 2/4, p=0.018 | 2/4, p=0.018 | 2/4, p=0.151 |
 
+![Operating points](figures/operating_points.png)
+
+*Each marker is one alarm budget; the filled sketch markers sit inside the hollow
+exact rings wherever the two agree. Numbers in
+[`figures/operating_points.csv`](figures/operating_points.csv).*
+
 SW-AKDE tracks exact KDE to within noise at every operating point — 0.050 versus
 0.049 at the 5% budget. **Approximation costs essentially nothing in detection
 quality**, which is the positive result for the engineering lever.
@@ -155,6 +161,14 @@ failure begins. The large positive leads only appear once the horizon is widened
 and they vanish at 3h, which means they are the wider window catching unrelated
 alarms rather than genuine early warning.
 
+![Score around each failure](figures/scores_around_failures.png)
+
+*The score peaks at onset in all four cases. Note failure 2, which is also above
+threshold from roughly -45h to -15h: earlier excursions do happen, they are just
+not specific to failures, which is why the wide-horizon leads do not survive the
+chance test. Numbers in
+[`figures/scores_around_failures.csv`](figures/scores_around_failures.csv).*
+
 **This is a detection system, not a prediction system, on this data.** The
 "+17h mean lead" that a naive reading of the 24h row would support is not
 supported once chance is accounted for.
@@ -176,6 +190,10 @@ would not pass.
 | failure-2 | Oil_temperature +0.62σ | barely visible |
 | failure-3 | Oil_temperature +0.24σ | not visible |
 | failure-4 | Oil_temperature +1.67σ | clearly visible |
+
+![Per-channel effect sizes](figures/effect_sizes.png)
+
+*Numbers in [`figures/effect_sizes.csv`](figures/effect_sizes.csv).*
 
 Two of the four failures have essentially no analog signature beforehand. No
 density-based detector on these channels can predict them, because the
@@ -211,6 +229,12 @@ Measured (`make memcheck-rows`), `window=3600`, `dim=7`:
 Exact windowed KDE holds 3600 x 7 floats — **0.20 MB**. The sketch needs
 5–48 MB for the same detection quality. On this workload it is **26–236x more
 expensive than the thing it is supposed to replace.**
+
+![Memory crossover](figures/memory_crossover.png)
+
+*The sketch's footprint is flat in dimension; storing the window is not. MetroPT
+sits two orders of magnitude below either crossover. Numbers in
+[`figures/memory_crossover.csv`](figures/memory_crossover.csv).*
 
 #### The boundary, as a rule
 
@@ -288,12 +312,23 @@ high-dimensional streams of the kind the paper targets.
 ## Reproducing
 
 ```bash
-make data                                   # download MetroPT-3
-python -m scripts.run_evaluation --method swakde
-python -m scripts.run_evaluation --method race
-python -m scripts.run_evaluation --method exact
-python -m scripts.compare_methods
+make data       # download MetroPT-3 (~208 MB, not committed)
+make evaluate   # three replays + comparison + horizon sweep + diagnosis
+make figures    # figures and their CSVs into docs/figures/
+make mlflow     # log every operating point and artifact to MLflow
 ```
 
 The expensive replay (1.5M readings) runs once per method and caches its score
-series to Parquet; every threshold sweep afterwards is instant.
+series to Parquet; every threshold sweep, figure and MLflow run afterwards reads
+that cache and is effectively instant. Scores are recomputed from cached
+densities on read, so a change to the scorer does not require another replay.
+
+The memory results come from a separate pair of targets, since they instrument
+the sketch rather than reading the cache:
+
+```bash
+make memcheck-rows        # sketch footprint vs storing the window
+make memcheck-crossover   # crossover dimension over rows x window
+```
+
+Browse the logged runs with `mlflow ui --backend-store-uri sqlite:///mlflow.db`.

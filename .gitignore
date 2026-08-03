@@ -16,6 +16,8 @@ data/
 *.npz
 *.log
 mlruns/
+mlflow.db
+mlartifacts/
 
 # editor / OS
 .vscode/

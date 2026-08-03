@@ -1,6 +1,6 @@
 PYTHON := .venv/Scripts/python.exe
 
-.PHONY: help venv test bench tune memcheck memcheck-rows memcheck-crossover evaluate data up down logs replay anomaly clean
+.PHONY: help venv test bench tune memcheck memcheck-rows memcheck-crossover evaluate figures mlflow data up down logs replay anomaly clean
 
 help:
 	@echo "venv     - create the 3.12 venv and install the package with dev+streaming deps"
@@ -9,6 +9,8 @@ help:
 	@echo "tune     - sweep detector parameters against real data"
 	@echo "memcheck - measure what cell reclamation buys"
 	@echo "evaluate - full evaluation vs the four documented failures"
+	@echo "figures  - evaluation figures + CSVs into docs/figures/"
+	@echo "mlflow   - log operating points and artifacts to MLflow"
 	@echo "data     - download MetroPT-3 and convert to Parquet (~208 MB, not committed)"
 	@echo "up       - start the monitoring stack (Kafka, consumer, Prometheus, Grafana, Alertmanager, Postgres)"
 	@echo "replay   - stream MetroPT-3 into Kafka"
@@ -58,6 +60,15 @@ evaluate:
 	$(PYTHON) -m scripts.compare_methods
 	$(PYTHON) -m scripts.horizon_sensitivity
 	$(PYTHON) -m scripts.diagnose_failures
+
+# Figures for the evaluation report, plus a CSV beside each so the chart is
+# never the only way to read a value.
+figures:
+	$(PYTHON) -m scripts.make_plots
+
+# Experiment tracking: one run per (method, alarm budget), figures as artifacts.
+mlflow:
+	$(PYTHON) -m scripts.log_to_mlflow
 
 data:
 	$(PYTHON) -m scripts.download_data
