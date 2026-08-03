@@ -92,7 +92,26 @@ The Euclidean counterpart `compute_true_kde_l2` (same files, e.g. `window_size.p
 | 4 | 0.198 | 0.200 | 0.353 |
 | 8 | 0.039 | 0.040 | **0.242** |
 
-Correct at `k=1` (where the two forms coincide) and diverges rapidly beyond it — at `k=8` the real collision rate is ~6x theory. This defeats the whole point of concatenating `k` hashes: the amplification that Theorem 2.3/2.4 relies on (`k^p(x,q)` collision probability, range `W^p`) never materialises, so the sketch's effective resolution barely improves as `k` grows. **Action:** our port uses `code = code * 2 + bit` in both `sketch/sw_akde.py` and `sketch/race.py`, keeping the two an apples-to-apples comparison.
+Correct at `k=1` (where the two forms coincide up to relabelling: `{0,2}` instead of `{0,1}`, the same partition) and diverges rapidly beyond it — at `k=8` the real collision rate is ~6x theory. This defeats the whole point of concatenating `k` hashes: the amplification that Theorem 2.3/2.4 relies on (`k^p(x,q)` collision probability, range `W^p`) never materialises, so the sketch's effective resolution barely improves as `k` grows.
+
+**Important caveat — this does not invalidate the paper's published results.** The paper states (§5.2) that "the bandwidth parameter, denoted by `p` in Algorithm 2, was set to 1 for all experiments", and every documented invocation in the reference README passes `--b 1`. At `k=1` the bug is inert. It is a *latent* bug: it bites anyone who raises `k` to get the LSH amplification the method is built on — the normal, useful regime — but the reported numbers stand. Say it that way in any writeup; claiming their experiments are wrong would be false.
+
+**Action:** our port uses `code = code * 2 + bit` in both `sketch/sw_akde.py` and `sketch/race.py`, keeping the two an apples-to-apples comparison.
+
+**Finding G — Euclidean cell code sums the k hashes, collapsing the cell space (new; the L2 analogue of E, and worse).** `L2_hash_AKDE.py` lines 30-33 build the cell key as `s = sum(r)`, where `r` holds the `k` universal-hashed p-stable values. Summation is order-invariant *and* range-destroying: it maps the `R^k` distinct hash tuples onto at most `k*R` sums, which by CLT concentrate near the mean, so the usable count is far smaller still. Measured on 4,000 synthetic points, `k=5`, `R = 2^20`:
+
+| | distinct cells | collision rate |
+|---|---|---|
+| polynomial fold (ours) | 3,384 | 0.154 |
+| sum of hashes (reference) | **101** | **0.975** |
+
+Nearly everything lands in ~100 cells regardless of how large `R` is set. Two further notes on the same lines: `s = sum(r)` is computed *inside* the inner loop, so it is recomputed `k` times per row (O(k²) work, only the last value used); and `s` would be undefined if a row had zero hash functions.
+
+Same `k=1` caveat as Finding E — at `k=1`, `sum([h]) == h`, so the reference's own experiments are unaffected.
+
+**Action:** `sketch/p_stable.py`'s `PStableHashBank` folds with a polynomial hash (`code = (code * MULT + value) mod R`), preserving which value came from which position before reducing to the bounded range. `tests/test_sw_akde_euclidean.py::test_fold_preserves_position_unlike_summing` pins this.
+
+**Finding H — the L2 brute-force ground truth omits the `** k` exponent (new).** `compute_true_kde_l2` (`window_size.py` lines 27-37 and its copies) computes `np.sum(probs, axis=1)` where `probs` is the single-hash collision probability — but the collision probability of `k` concatenated hashes is `p^k`, and the angular counterpart in the same file *does* apply `** k` (line 24). So the two ground-truth helpers disagree, and the L2 one is only right at `k=1`. Same caveat: harmless for their `k=1` experiments. **Action:** our `sketch/brute_force.py::compute_true_kde_l2` applies `** k`.
 
 **Finding F — cold cells never expire, so queries return frozen counts (new; the most consequential for our application).** `ExpHst` expires lazily: eviction happens only inside `new_bucket()`. A given cell's histogram is only touched when *that cell* is hit, and `count_est()` (`Exponential_Histogram.py` lines 56-57) takes no time argument at all — it just returns `total - last/2`. So once a cell stops receiving elements, its buckets are never evicted and its reported count is frozen indefinitely, no matter how far the stream has advanced past the window. Demonstrated minimally: add elements at `t=1..5` to a `window_size=10` histogram, then query at any later time — still returns `5.0`, with all five original buckets retained.
 

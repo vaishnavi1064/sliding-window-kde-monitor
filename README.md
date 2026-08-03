@@ -39,16 +39,21 @@ We do not claim a new algorithm.
 ## Correctness
 
 We validate bottom-up against ground truth that involves no sketch at all, never against the
-reference implementation's outputs — because auditing that implementation turned up six real
-bugs, documented with evidence in [`docs/REFERENCE_NOTES.md`](docs/REFERENCE_NOTES.md). Two of
-them trace back to the paper's own pseudocode rather than just the code:
+reference implementation's outputs — because auditing that implementation turned up eight real
+bugs, documented with evidence in [`docs/REFERENCE_NOTES.md`](docs/REFERENCE_NOTES.md). Some
+trace back to the paper's own pseudocode rather than just the code:
 
 - **Finding A** — every cell silently drops its first arrival.
-- **Finding E** — the k-bit LSH cell code only encodes Hamming weight, not *which* hashes
-  fired, so LSH amplification never materialises (measured collision probability at k=8:
-  0.242 vs 0.039 theoretical).
 - **Finding F** — cells that stop receiving data never expire, so their density is frozen
   forever. This is the one that matters most here: a region going quiet *is* the anomaly signal.
+- **Findings E, G, H** — the LSH cell code discards information (angular: only Hamming weight
+  survives; Euclidean: the k hashes are summed, collapsing 4,000 points into 101 cells), and the
+  L2 ground-truth helper omits an exponent.
+
+**These last three do not invalidate the paper's results.** It sets the concatenation parameter
+to 1 for all experiments, where all three are inert. They are latent bugs that break at k>1 —
+the regime the LSH-amplification argument is actually about. We fixed them because we intend to
+use k>1; the published numbers stand.
 
 The three validation tiers (see `CLAUDE.md` §9) are: exponential-histogram unit correctness;
 un-windowed parity against plain RACE and full-stream brute force; and windowed accuracy

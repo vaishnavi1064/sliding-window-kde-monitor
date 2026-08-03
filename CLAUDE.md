@@ -115,6 +115,14 @@ Drivers use `query1` (plain mean). The paper **specifies the mean** for SW-AKDE 
 **Finding E — Cell code only encodes Hamming weight (in `Ang_hash_AKDE.py` AND `RACE_19.py`).**
 Both build the `k`-bit cell code as `r = bit*2 + r` instead of `r = r*2 + bit`, which collapses to `r = 2 * (count of set bits)` — *which* hashes fired is lost, only *how many*. Correct at `k=1`, badly wrong beyond: measured collision probability at `k=8` is **0.242 vs 0.039 theoretical (~6x)**. This nullifies the LSH amplification Theorem 2.3/2.4 depends on. **Action:** use standard shift-and-append (`code = code*2 + bit`) in both our sketch and our RACE baseline.
 
+**Finding G — Euclidean cell code sums the `k` hashes (the L2 analogue of E, and worse).**
+`L2_hash_AKDE.py` keys cells on `s = sum(r)`, which is order-invariant and maps `R^k` tuples onto `≤ k*R` sums that concentrate near the mean. Measured on 4,000 points at `k=5`, `R=2^20`: **101 distinct cells vs 3,384** with a correct fold (97.5% vs 15.4% collision rate). **Action:** fold with a polynomial hash (`code = (code*MULT + value) mod R`).
+
+**Finding H — the L2 brute-force ground truth omits `** k`.**
+`compute_true_kde_l2` sums the single-hash collision probability without raising it to `k`, while the angular helper in the same file does. **Action:** apply `** k` in our `compute_true_kde_l2`.
+
+> **Honesty caveat on E, G and H — they do NOT invalidate the paper's published results.** The paper sets the concatenation parameter to 1 for all experiments (§5.2), and every documented reference invocation passes `--b 1`. All three bugs are inert at `k=1`. They are *latent*: they break as soon as `k>1`, which is the regime the whole LSH-amplification argument is about. State it exactly that way — do not claim their experiments are wrong.
+
 **Finding F — Cold cells never expire; queries return frozen counts.**
 `ExpHst` expires only inside its update path, and `count_est()` takes no time argument — so a cell that stops being hit reports a stale count forever. The paper's Algorithm 2 query procedure has the same shape, so this is faithful-but-broken. **This is the finding that matters most for us:** a region going quiet *is* our anomaly signal, and without expiry-on-read that density never decays. **Action:** `count_estimate(t)` takes the current logical clock and expires before reading; `query(x, t)` threads it through. Also bounds memory for cold cells.
 
