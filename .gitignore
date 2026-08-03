@@ -1,0 +1,22 @@
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+build/
+dist/
+.venv/
+venv/
+
+# data / experiment artifacts — regenerate, don't commit
+data/
+*.npy
+*.npz
+*.log
+mlruns/
+
+# editor / OS
+.vscode/
+.DS_Store
