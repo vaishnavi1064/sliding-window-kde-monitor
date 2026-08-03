@@ -54,6 +54,15 @@ class ExponentialHistogram:
                 self.last = 2 * size
             i = j + 1
 
+    def is_expired(self, t: int) -> bool:
+        """True if nothing in this histogram is still inside the window at `t`.
+
+        Such a histogram contributes exactly zero to any density query, so the
+        owning sketch can drop it outright -- see SlidingWindowKDE.compact.
+        """
+        self._expire(t)
+        return not self.buckets
+
     def count_estimate(self, t: int) -> float:
         # Expiry is lazy, so a cell that stopped receiving elements still holds
         # its old buckets -- reading without expiring first returns a frozen,

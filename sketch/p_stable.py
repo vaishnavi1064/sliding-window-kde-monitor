@@ -19,6 +19,36 @@ def l2_lsh_collision_probability(distance: float, width: float) -> float:
     return term1 - term2
 
 
+def _build_collision_table(max_ratio: float = 60.0, points: int = 20_001):
+    """Tabulate collision probability against the distance/width ratio.
+
+    The probability depends only on d/w, not on d and w separately, so one table
+    serves every bandwidth. Needed because the scalar form above calls math.erf,
+    and brute-force KDE evaluates it once per window element per query --
+    hundreds of millions of times. Interpolating a table keeps that vectorized
+    without pulling in scipy for a single special function.
+    """
+    ratios = np.linspace(0.0, max_ratio, points)
+    values = np.empty_like(ratios)
+    values[0] = 1.0
+    for i, ratio in enumerate(ratios[1:], start=1):
+        values[i] = l2_lsh_collision_probability(float(ratio), 1.0)
+    return ratios, np.clip(values, 0.0, 1.0)
+
+
+_RATIOS, _PROBABILITIES = _build_collision_table()
+
+
+def l2_collision_probability_vectorized(
+    distances: np.ndarray, width: float
+) -> np.ndarray:
+    """Vectorized counterpart of l2_lsh_collision_probability."""
+    ratios = np.abs(np.asarray(distances, dtype=float)) / width
+    # Beyond the table the probability is negligible; np.interp clamps to the
+    # final value, which is already ~0.
+    return np.interp(ratios, _RATIOS, _PROBABILITIES)
+
+
 class PStableHashBank:
     """`rows` independent Euclidean LSH functions, each concatenating `k` p-stable
     hashes, folded into a bounded cell code.
