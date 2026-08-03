@@ -60,7 +60,60 @@ def test_windowed_kde_within_theoretical_bound(window_size: int, rows: int):
     assert relative_error.mean() <= THEORETICAL_BOUND
 
 
+def test_every_cells_first_arrival_is_counted():
+    """Finding A, at the sketch level.
+
+    The paper's Algorithm 2 (§4.1) preprocessing reads:
+
+        if A[i, j] is empty then
+            Create an Exponential Histogram at A[i, j] with timestamp t
+        else
+            Add a 1 to the Exponential Histogram at A[i, j] with timestamp t
+
+    The create branch has no corresponding "Add a 1", so every cell drops the
+    very element that created it. The reference implementation
+    (`Ang_hash_AKDE.py` lines 25-28) has the same asymmetry.
+
+    A single element is the sharpest possible probe: correctly counted it gives
+    density 1.0, and under the published branch structure it gives exactly 0.0.
+    The tier-2 convergence test cannot see this -- a one-per-cell undercount
+    stays inside its tolerance (measured: 0.074 vs 0.063 mean relative error,
+    both well under its 0.30 assert), which is why this test exists separately.
+    """
+    rng = np.random.default_rng(0)
+    sketch = SlidingWindowAngularKDE(
+        rows=200,
+        k=4,
+        dim=6,
+        window_size=1000,
+        eh_relative_error=EH_RELATIVE_ERROR,
+        rng=np.random.default_rng(1),
+    )
+
+    x = rng.normal(size=6)
+    sketch.update(x, 1)
+
+    # Every row placed this element in some cell, so the mean over rows is 1.
+    assert sketch.query(x, t=1) == 1.0
+
+    # And it keeps counting as more arrive in the same region.
+    for t in range(2, 11):
+        sketch.update(x, t)
+    assert sketch.query(x, t=10) >= 9.0
+
+
 def test_window_actually_expires_old_data():
+    # Finding F, at the sketch level: cold cells must expire on read.
+    #
+    # The paper's Algorithm 2 (§4.1) query procedure reads the cell with no time
+    # argument at all --
+    #     c <- estimate of count in the Exponential Histogram at A[i, h_i(q)]
+    # -- so it cannot expire before reading, and the reference's `count_est()`
+    # likewise takes no timestamp. A region that goes quiet therefore reports a
+    # frozen count forever. Reproducing that behaviour here leaves the density
+    # unchanged (ratio 1.00) and fails the assert below, which passes at 0.00
+    # once expiry-on-read is threaded through.
+    #
     # Guards the sliding-window semantics themselves: a query matching only
     # data that has since fallen out of the window must decay toward zero,
     # while one matching recent data must not. Without correct expiry this

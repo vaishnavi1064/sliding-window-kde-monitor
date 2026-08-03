@@ -36,7 +36,7 @@ We do not claim a new algorithm.
 | 5 | C++17 + pybind11 optimized core | Planned |
 | 6 | Adaptive window size (research extension) | Stretch |
 
-61 tests green. Engineering log in [`docs/PERFORMANCE.md`](docs/PERFORMANCE.md); findings from
+66 tests green. Engineering log in [`docs/PERFORMANCE.md`](docs/PERFORMANCE.md); findings from
 running against the real data in [`docs/DATA_NOTES.md`](docs/DATA_NOTES.md); evaluation
 methodology in [`docs/EVALUATION.md`](docs/EVALUATION.md).
 
@@ -81,17 +81,47 @@ reference implementation's outputs — because auditing that implementation turn
 bugs, documented with evidence in [`docs/REFERENCE_NOTES.md`](docs/REFERENCE_NOTES.md). Some
 trace back to the paper's own pseudocode rather than just the code:
 
-- **Finding A** — every cell silently drops its first arrival.
-- **Finding F** — cells that stop receiving data never expire, so their density is frozen
-  forever. This is the one that matters most here: a region going quiet *is* the anomaly signal.
+**Two are in the published algorithm itself**, not only in the reference code — both in
+Algorithm 2 of arXiv:2510.23039 (§4.1), and both active at the `p = 1` setting the paper
+uses for all its experiments:
+
+- **Finding A — every cell silently drops its first arrival.** Algorithm 2's
+  preprocessing loop reads `if A[i,j] is empty then Create an Exponential Histogram …
+  else Add a 1 …`: the create branch has no corresponding "Add a 1", so the element that
+  created the cell is never counted. The reference repeats it
+  (`Ang_hash_AKDE.py` lines 25-28).
+  Test: [`test_every_cells_first_arrival_is_counted`](tests/test_sw_akde_windowed.py) —
+  one element gives density 1.0 correctly and exactly 0.0 under the published branch
+  structure. The tier-2 convergence test cannot see this (a one-per-cell undercount
+  measures 0.074 vs 0.063 mean relative error, both inside its 0.30 tolerance), which is
+  why it is tested separately.
+- **Finding F — cells that stop receiving data never expire, so their density is frozen
+  forever.** Algorithm 2's query procedure reads
+  `c ← estimate of count in the Exponential Histogram at A[i, h_i(q)]` — no time
+  argument, so it cannot expire before reading; the reference's `count_est()` likewise
+  takes no timestamp. This is the one that matters most here: a region going quiet *is*
+  the anomaly signal, and without expiry-on-read that density never decays.
+  Test: [`test_window_actually_expires_old_data`](tests/test_sw_akde_windowed.py) —
+  density falls to 0.00 of its fresh value with expiry-on-read and stays at 1.00
+  (unchanged) when the published read path is reproduced, failing the assert.
+  The same lazy expiry also leaks memory, quantified in
+  [`docs/PERFORMANCE.md`](docs/PERFORMANCE.md).
+
+**Three are code-only defects that do not affect the paper's results:**
+
 - **Findings E, G, H** — the LSH cell code discards information (angular: only Hamming weight
   survives; Euclidean: the k hashes are summed, collapsing 4,000 points into 101 cells), and the
   L2 ground-truth helper omits an exponent.
 
-**These last three do not invalidate the paper's results.** It sets the concatenation parameter
-to 1 for all experiments, where all three are inert. They are latent bugs that break at k>1 —
-the regime the LSH-amplification argument is actually about. We fixed them because we intend to
-use k>1; the published numbers stand.
+These three are **latent**: the paper sets the concatenation parameter to 1 for all
+experiments, and at `k=1` all three are inert. They break only at `k>1` — the regime the
+LSH-amplification argument is actually about. We fixed them because we intend to use
+`k>1`. **The paper's published numbers stand**, and we make no claim otherwise.
+
+The distinction matters and we keep it throughout: A and F are corrections to the
+*published algorithm* at its own settings; E, G and H are bugs in the *reference code*
+that its own experiments never triggered. We have not attempted to quantify what A and F
+would change in the paper's reported figures, and so we do not assert anything about them.
 
 The three validation tiers (see `CLAUDE.md` §9) are: exponential-histogram unit correctness;
 un-windowed parity against plain RACE and full-stream brute force; and windowed accuracy
@@ -139,7 +169,7 @@ maintenance report. The dataset is **not committed** — run `make data`.
 Two things measurement contradicted, both detailed in
 [`docs/DATA_NOTES.md`](docs/DATA_NOTES.md): the sampling rate is **0.1 Hz (every 10s), not
 1 Hz** as the documentation says, and normal density is hugely variable because the
-compressor cycles — enough that a naive z-score misses a 6× density collapse entirely.
+compressor cycles — enough that a naive z-score misses a 9× density collapse entirely.
 
 ## References
 
