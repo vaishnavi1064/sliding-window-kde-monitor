@@ -147,7 +147,7 @@ The trustworthy oracle is the **sketch-independent brute-force KDE** the referen
 ```
  MetroPT sensor data ─► Kafka topic ─► Stream consumer ─►  SW-AKDE sketch (OUR clean port)
  (replayed as a live     (replay)      (logical clock t++,   + rolling anomaly/quality scoring
-  ~1 Hz stream)                          per-reading update
+  ~0.1 Hz stream)                        per-reading update
                                          + density query)
                                                  │
                     ┌────────────────────────────┼──────────────────────────┐
@@ -182,7 +182,7 @@ Rule: every dependency needs a specific, project-grounded reason. No padding.
 | Sketch core (reference port) | **Python 3.12** | Clean, correct, tested port validated per §9. First deliverable. |
 | Sketch core (optimized) | **C++17 + pybind11** | Lever-1 engineering novelty: optimized native hot path (EH update + query), same Python interface. **Only after the Python port passes §9.** |
 | Streaming | **Kafka** | Replay sensor data as a real live stream. |
-| Stream processing | **Python consumer** (`confluent-kafka`) | Lean; sufficient for MetroPT's ~1 Hz single-asset feed. Owns the **logical clock** (Finding B). |
+| Stream processing | **Python consumer** (`confluent-kafka`) | Lean; sufficient for MetroPT's ~0.1 Hz single-asset feed. Owns the **logical clock** (Finding B). |
 | Monitoring | **Prometheus + Grafana + Alertmanager** | The Meta quality-monitoring + alerting face. |
 | Agent interface | **MCP server (Python)** | The Siemens face. |
 | Storage | **Parquet + PostgreSQL** | Parquet for raw/replayed data; Postgres for alerts + metadata. |
@@ -197,7 +197,7 @@ Rule: every dependency needs a specific, project-grounded reason. No padding.
 
 ## 11. Datasets
 
-- **Primary — MetroPT.** Real metro-train Air Production Unit sensors (pressure, temperature, motor current), continuous 1 Hz flow, **ground-truth anomalies** from maintenance reports. Paper/DOI: https://www.nature.com/articles/s41597-022-01877-3. Provide a `scripts/download_data.py`; do NOT commit the data. Note: modest in volume — the "big data" claim is about the **streaming architecture**, not raw size. Keep that honest.
+- **Primary — MetroPT.** Real metro-train Air Production Unit sensors (pressure, temperature, motor current), continuous flow sampled every 10s (0.1 Hz -- measured, despite the dataset docs saying 1 Hz), **ground-truth anomalies** from maintenance reports. Paper/DOI: https://www.nature.com/articles/s41597-022-01877-3. Provide a `scripts/download_data.py`; do NOT commit the data. Note: modest in volume — the "big data" claim is about the **streaming architecture**, not raw size. Keep that honest.
 - **Optional — NASA C-MAPSS.** Run-to-failure turbofan time series (NASA PCoE). For later cross-asset generalization only.
 
 ---

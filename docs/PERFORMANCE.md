@@ -72,7 +72,7 @@ update time.
 
 ## What this means downstream
 
-- **Phase 2 (streaming) is not throughput-constrained.** MetroPT-3 arrives at 1 Hz; even at
+- **Phase 2 (streaming) is not throughput-constrained.** MetroPT-3 arrives every 10s (0.1 Hz); even at
   `rows=3200` we are ~112x faster than real time, and ~2000x at `rows=400`. Accelerated replay
   is what makes a full pass slow, not the sketch.
 - **Phase 3 (evaluation) is throughput-constrained.** A single pass at `rows=3200` is nearly

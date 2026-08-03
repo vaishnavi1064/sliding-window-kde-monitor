@@ -1,0 +1,28 @@
+global:
+  resolve_timeout: 1m
+
+route:
+  receiver: default
+  group_by: ["alertname", "asset"]
+  group_wait: 10s
+  group_interval: 30s
+  repeat_interval: 1h
+  routes:
+    - matchers:
+        - severity = "critical"
+      receiver: critical
+      group_wait: 0s
+
+receivers:
+  # No external integrations wired up: alerts are inspected via the Alertmanager
+  # UI on :9093. Adding a webhook/Slack receiver here would be the production step.
+  - name: default
+  - name: critical
+
+inhibit_rules:
+  # A severe anomaly already implies the warning-level one.
+  - source_matchers:
+      - alertname = "SensorDensityAnomalySevere"
+    target_matchers:
+      - alertname = "SensorDensityAnomaly"
+    equal: ["asset"]

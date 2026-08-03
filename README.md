@@ -28,13 +28,16 @@ We do not claim a new algorithm.
 | Phase | Scope | State |
 |---|---|---|
 | 0 | Repo, reference audit | Done |
-| 1 | Validated pure-Python sketch (angular kernel) | Done — 11 tests green |
-| 1.5 | Euclidean kernel, profiling/vectorization | Next |
-| 2 | Kafka streaming, Prometheus/Grafana/Alertmanager | Planned |
+| 1 | Validated pure-Python sketch (angular kernel) | Done |
+| 1.5 | Euclidean kernel; profiling + 2.9x vectorization | Done |
+| 2 | Kafka streaming, Prometheus/Grafana/Alertmanager | In progress |
 | 3 | Anomaly detector + MetroPT evaluation | Planned |
 | 4 | MCP server | Planned |
 | 5 | C++17 + pybind11 optimized core | Planned |
 | 6 | Adaptive window size (research extension) | Stretch |
+
+44 tests green. Engineering log in [`docs/PERFORMANCE.md`](docs/PERFORMANCE.md); findings from
+running against the real data in [`docs/DATA_NOTES.md`](docs/DATA_NOTES.md).
 
 ## Correctness
 
@@ -61,28 +64,47 @@ against brute-force last-N KDE within the paper's own theoretical bound.
 
 ## Getting started
 
+The sketch on its own needs only numpy:
+
 ```bash
 py -3.12 -m venv .venv
 .venv/Scripts/python.exe -m pip install -e ".[dev]"
 .venv/Scripts/python.exe -m pytest
 ```
 
-Or via `make test`.
+### The monitoring stack
+
+```bash
+make data     # download MetroPT-3 and convert to Parquet (~208 MB, not committed)
+make up       # Kafka, consumer, Prometheus, Grafana, Alertmanager, Postgres
+make anomaly  # replay the stream with a synthetic fault injected
+```
+
+Grafana on <http://localhost:3000> (anonymous access), Prometheus on `:9090`,
+Alertmanager on `:9093`. `make down` stops everything.
 
 ## Layout
 
 ```
 sketch/     the sketch itself: exponential histogram, LSH, SW-AKDE, RACE baseline, brute-force oracle
-tests/      the three validation tiers
-docs/       reference audit (REFERENCE_NOTES.md) and the source paper
+streaming/  producer, consumer, feature extraction, data-quality checks, scoring
+docker/     Dockerfile and the Prometheus / Grafana / Alertmanager configuration
+scripts/    dataset download, throughput benchmark
+tests/      the three validation tiers plus streaming component tests
+docs/       reference audit, performance log, data findings, and the source paper
 CLAUDE.md   full project brief: novelty framing, findings, build plan, tech-stack rationale
 ```
 
 ## Data
 
-MetroPT-3 (UCI): metro-train Air Production Unit sensors, 1.5M readings at 1 Hz over
-Feb–Aug 2020, 15 sensor channels, with four documented air-leak failures in a separate
-maintenance report. The dataset is **not committed**; a download script lands in Phase 2.
+MetroPT-3 (UCI): metro-train Air Production Unit sensors, 1,516,948 readings over
+Feb–Sep 2020, 15 sensor channels, with four documented air-leak failures in a separate
+maintenance report. The dataset is **not committed** — run `make data`.
+
+Two things measurement contradicted, both detailed in
+[`docs/DATA_NOTES.md`](docs/DATA_NOTES.md): the sampling rate is **0.1 Hz (every 10s), not
+1 Hz** as the documentation says, and normal density is hugely variable because the
+compressor cycles — enough that a naive z-score misses a 6× density collapse entirely.
 
 ## References
 

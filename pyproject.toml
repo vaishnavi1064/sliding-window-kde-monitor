@@ -10,6 +10,15 @@ dependencies = [
 dev = [
     "pytest",
 ]
+# Kept out of the core dependency set so the sketch stays importable (and CI
+# stays fast) without any of the streaming stack installed.
+streaming = [
+    "confluent-kafka",   # Kafka client for the replay topic
+    "prometheus-client", # /metrics endpoint scraped by Prometheus
+    "pandas",            # MetroPT CSV/Parquet handling
+    "pyarrow",           # Parquet: replaying 1.5M rows from CSV every run is wasteful
+    "requests",          # dataset download
+]
 
 [build-system]
 requires = ["setuptools>=68"]

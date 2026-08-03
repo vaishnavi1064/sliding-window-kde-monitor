@@ -11,7 +11,7 @@ import numpy as np
 
 from sketch.sw_akde import SlidingWindowAngularKDE
 
-# MetroPT-3: 15 sensor channels, 1,516,948 readings at 1 Hz.
+# MetroPT-3: 15 sensor channels, 1,516,948 readings sampled every 10s (0.1 Hz).
 METROPT_DIM = 15
 METROPT_ROWS = 1_516_948
 
