@@ -10,8 +10,19 @@ dependencies = [
 dev = [
     "pytest",
 ]
-# Kept out of the core dependency set so the sketch stays importable (and CI
-# stays fast) without any of the streaming stack installed.
+# All optional: the sketch itself needs only numpy, so CI and the core package
+# stay light. Install what a given task needs.
+#
+# Evaluation and reporting: figures plus experiment tracking.
+analysis = [
+    "matplotlib",        # evaluation figures
+    "mlflow",            # parameter sweeps vs accuracy/memory
+]
+# The MCP server and its Postgres-backed alert history.
+mcp = [
+    "mcp",               # Model Context Protocol server
+    "psycopg[binary]",   # Postgres driver for alert history
+]
 streaming = [
     "confluent-kafka",   # Kafka client for the replay topic
     "prometheus-client", # /metrics endpoint scraped by Prometheus
@@ -25,7 +36,7 @@ requires = ["setuptools>=68"]
 build-backend = "setuptools.build_meta"
 
 [tool.setuptools.packages.find]
-include = ["sketch*", "streaming*", "evaluation*"]
+include = ["sketch*", "streaming*", "evaluation*", "mcp_server*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

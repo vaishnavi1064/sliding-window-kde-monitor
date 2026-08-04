@@ -1,6 +1,6 @@
 PYTHON := .venv/Scripts/python.exe
 
-.PHONY: help venv test bench tune memcheck memcheck-rows memcheck-crossover evaluate figures mlflow data up down logs replay anomaly clean
+.PHONY: help venv test bench tune memcheck memcheck-rows memcheck-crossover evaluate figures mlflow alerts mcp-verify mcp-serve data up down logs replay anomaly clean
 
 help:
 	@echo "venv     - create the 3.12 venv and install the package with dev+streaming deps"
@@ -11,6 +11,9 @@ help:
 	@echo "evaluate - full evaluation vs the four documented failures"
 	@echo "figures  - evaluation figures + CSVs into docs/figures/"
 	@echo "mlflow   - log operating points and artifacts to MLflow"
+	@echo "alerts   - load detected episodes into Postgres for the MCP server"
+	@echo "mcp-verify - exercise the three MCP tools end to end"
+	@echo "mcp-serve  - run the MCP server on stdio"
 	@echo "data     - download MetroPT-3 and convert to Parquet (~208 MB, not committed)"
 	@echo "up       - start the monitoring stack (Kafka, consumer, Prometheus, Grafana, Alertmanager, Postgres)"
 	@echo "replay   - stream MetroPT-3 into Kafka"
@@ -69,6 +72,17 @@ figures:
 # Experiment tracking: one run per (method, alarm budget), figures as artifacts.
 mlflow:
 	$(PYTHON) -m scripts.log_to_mlflow
+
+# Phase 4: load detected episodes into Postgres, then exercise the MCP tools.
+alerts:
+	docker compose up -d postgres
+	$(PYTHON) -m scripts.load_alerts
+
+mcp-verify:
+	$(PYTHON) -m scripts.verify_mcp
+
+mcp-serve:
+	$(PYTHON) -m mcp_server.server
 
 data:
 	$(PYTHON) -m scripts.download_data
