@@ -31,12 +31,12 @@ We do not claim a new algorithm.
 | 1 | Validated pure-Python sketch (angular kernel) | Done |
 | 1.5 | Euclidean kernel; profiling + 2.9x vectorization | Done |
 | 2 | Kafka streaming, Prometheus/Grafana/Alertmanager | Done — alert verified firing end to end |
-| 3 | Anomaly detector + MetroPT evaluation | In progress |
-| 4 | MCP server | Planned |
+| 3 | Anomaly detector + MetroPT evaluation | Done |
+| 4 | MCP server | Done — three tools verified end to end |
 | 5 | C++17 + pybind11 optimized core | Planned |
 | 6 | Adaptive window size (research extension) | Stretch |
 
-66 tests green. Engineering log in [`docs/PERFORMANCE.md`](docs/PERFORMANCE.md); findings from
+88 tests green. Engineering log in [`docs/PERFORMANCE.md`](docs/PERFORMANCE.md); findings from
 running against the real data in [`docs/DATA_NOTES.md`](docs/DATA_NOTES.md); evaluation
 methodology in [`docs/EVALUATION.md`](docs/EVALUATION.md).
 
@@ -140,13 +140,27 @@ py -3.12 -m venv .venv
 ### The monitoring stack
 
 ```bash
+make env      # copy .env.example to .env, then edit the placeholders
 make data     # download MetroPT-3 and convert to Parquet (~208 MB, not committed)
 make up       # Kafka, consumer, Prometheus, Grafana, Alertmanager, Postgres
 make anomaly  # replay the stream with a synthetic fault injected
 ```
 
+`.env` holds the local Postgres and Grafana credentials and is **not committed** —
+only [`.env.example`](.env.example) is. Nothing has a hardcoded password: compose
+refuses to start without the variables set, and the Python entry points raise a
+message naming `.env.example` rather than falling back to a guess.
+
 Grafana on <http://localhost:3000> (anonymous access), Prometheus on `:9090`,
 Alertmanager on `:9093`. `make down` stops everything.
+
+### Agent access (MCP)
+
+```bash
+make alerts      # load detected episodes into Postgres
+make mcp-verify  # exercise the three MCP tools end to end
+make mcp-serve   # run the MCP server on stdio
+```
 
 ## Layout
 

@@ -19,6 +19,11 @@ mlruns/
 mlflow.db
 mlartifacts/
 
+# local credentials -- only .env.example is tracked
+.env
+.env.*
+!.env.example
+
 # editor / OS
 .vscode/
 .DS_Store

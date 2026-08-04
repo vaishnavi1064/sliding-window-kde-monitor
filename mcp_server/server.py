@@ -40,7 +40,17 @@ mcp = MCPServer(
         "a health verdict to a user."
     ),
 )
-_store = Store()
+# Constructed on first use, not at import. Resolving credentials eagerly would
+# make `import mcp_server.server` fail wherever they are absent -- including in
+# unit tests, which exercise the tool logic without a database.
+_store_instance: Store | None = None
+
+
+def _get_store() -> Store:
+    global _store_instance
+    if _store_instance is None:
+        _store_instance = Store()
+    return _store_instance
 
 # Stated on every health response. These are conclusions from the Phase 3
 # evaluation (docs/EVALUATION.md), not hedging boilerplate.
@@ -113,7 +123,7 @@ def get_asset_health(asset_id: str = ASSET_ID) -> dict:
     Returns a coarse status plus recent alert counts. Status is derived from
     detected alert episodes only.
     """
-    health = _store.asset_health(asset_id)
+    health = _get_store().asset_health(asset_id)
     if health is None:
         return {"error": f"unknown asset '{asset_id}'"}
 
@@ -145,12 +155,12 @@ def list_recent_anomalies(
     `hours` limits to the period before the most recent record, since this is
     replayed historical data rather than a live feed.
     """
-    health = _store.asset_health(asset_id)
+    health = _get_store().asset_health(asset_id)
     if health is None:
         return {"error": f"unknown asset '{asset_id}'"}
 
     since = health.window_end - timedelta(hours=hours) if hours else None
-    anomalies = _store.recent_anomalies(
+    anomalies = _get_store().recent_anomalies(
         asset_id, limit=limit, since=since, only_matched=only_confirmed
     )
     return {
@@ -173,7 +183,7 @@ def explain_alert(anomaly_id: int) -> dict:
     The judgement an agent actually needs is not the score but whether the alert
     coincided with a documented failure, so that is stated plainly.
     """
-    anomaly = _store.get_anomaly(anomaly_id)
+    anomaly = _get_store().get_anomaly(anomaly_id)
     if anomaly is None:
         return {"error": f"no anomaly with id {anomaly_id}"}
 

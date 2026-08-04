@@ -15,9 +15,32 @@ ASSET_ID = "metropt-apu"
 
 
 def dsn() -> str:
-    return os.environ.get(
-        "POSTGRES_DSN", "postgresql://swakde:swakde@localhost:5432/swakde"
-    )
+    """Connection string for the alert-history database.
+
+    Prefers POSTGRES_DSN; otherwise assembles one from the same variables
+    docker-compose uses, so the two cannot drift. No password is hardcoded --
+    see .env.example. Raises rather than silently falling back to a guess,
+    because a wrong-but-plausible default produces a confusing timeout instead
+    of a clear error.
+    """
+    explicit = os.environ.get("POSTGRES_DSN")
+    if explicit:
+        return explicit
+
+    password = os.environ.get("POSTGRES_PASSWORD")
+    if not password:
+        raise RuntimeError(
+            "No database credentials found. Set POSTGRES_DSN, or "
+            "POSTGRES_PASSWORD (plus optionally POSTGRES_USER, POSTGRES_DB, "
+            "POSTGRES_HOST, POSTGRES_PORT). Copy .env.example to .env and "
+            "export it, or run inside docker compose which passes them in."
+        )
+
+    user = os.environ.get("POSTGRES_USER", "swakde")
+    database = os.environ.get("POSTGRES_DB", "swakde")
+    host = os.environ.get("POSTGRES_HOST", "localhost")
+    port = os.environ.get("POSTGRES_PORT", "5432")
+    return f"postgresql://{user}:{password}@{host}:{port}/{database}"
 
 
 @dataclass(frozen=True)

@@ -188,3 +188,54 @@ def test_store_requires_a_dsn_but_does_not_connect_on_construction():
 
     store = Store("postgresql://nobody@localhost:1/none")
     assert store.connection_string.startswith("postgresql://")
+
+
+class TestCredentialResolution:
+    """No credentials are hardcoded, so resolution has to be explicit and loud."""
+
+    def test_explicit_dsn_wins(self, monkeypatch):
+        from mcp_server.store import dsn
+
+        monkeypatch.setenv("POSTGRES_DSN", "postgresql://a:b@host:1/db")
+        monkeypatch.setenv("POSTGRES_PASSWORD", "ignored")
+        assert dsn() == "postgresql://a:b@host:1/db"
+
+    def test_assembled_from_the_same_parts_compose_uses(self, monkeypatch):
+        from mcp_server.store import dsn
+
+        monkeypatch.delenv("POSTGRES_DSN", raising=False)
+        monkeypatch.setenv("POSTGRES_USER", "someone")
+        monkeypatch.setenv("POSTGRES_PASSWORD", "secret")
+        monkeypatch.setenv("POSTGRES_DB", "somedb")
+        monkeypatch.setenv("POSTGRES_HOST", "postgres")
+        monkeypatch.setenv("POSTGRES_PORT", "6543")
+        assert dsn() == "postgresql://someone:secret@postgres:6543/somedb"
+
+    def test_missing_credentials_raise_rather_than_guessing(self, monkeypatch):
+        # A plausible-but-wrong default produces a connection timeout minutes
+        # later; an explicit error names the fix immediately.
+        from mcp_server.store import dsn
+
+        monkeypatch.delenv("POSTGRES_DSN", raising=False)
+        monkeypatch.delenv("POSTGRES_PASSWORD", raising=False)
+        with pytest.raises(RuntimeError, match="No database credentials"):
+            dsn()
+
+    def test_error_message_points_at_the_example_file(self, monkeypatch):
+        from mcp_server.store import dsn
+
+        monkeypatch.delenv("POSTGRES_DSN", raising=False)
+        monkeypatch.delenv("POSTGRES_PASSWORD", raising=False)
+        with pytest.raises(RuntimeError) as excinfo:
+            dsn()
+        assert ".env.example" in str(excinfo.value)
+
+    def test_importing_the_server_does_not_need_credentials(self, monkeypatch):
+        # The store is built on first use, not at import, so unit tests and
+        # tooling can load the module without a database configured.
+        import importlib
+
+        monkeypatch.delenv("POSTGRES_DSN", raising=False)
+        monkeypatch.delenv("POSTGRES_PASSWORD", raising=False)
+        module = importlib.reload(importlib.import_module("mcp_server.server"))
+        assert module.get_asset_health is not None

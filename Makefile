@@ -1,8 +1,15 @@
 PYTHON := .venv/Scripts/python.exe
 
-.PHONY: help venv test bench tune memcheck memcheck-rows memcheck-crossover evaluate figures mlflow alerts mcp-verify mcp-serve data up down logs replay anomaly clean
+# docker compose reads .env by itself; the Python entry points run on the host
+# and do not, so load it for them explicitly. Absent .env is not an error --
+# the compose defaults still apply and the code raises a clear message if a
+# credential is genuinely missing.
+LOAD_ENV := set -a; if [ -f .env ]; then . ./.env; fi; set +a;
+
+.PHONY: help env venv test bench tune memcheck memcheck-rows memcheck-crossover evaluate figures mlflow alerts mcp-verify mcp-serve data up down logs replay anomaly clean
 
 help:
+	@echo "env      - copy .env.example to .env (edit the placeholders before use)"
 	@echo "venv     - create the 3.12 venv and install the package with dev+streaming deps"
 	@echo "test     - run all validation tiers"
 	@echo "bench    - benchmark sketch update/query throughput"
@@ -22,6 +29,9 @@ help:
 	@echo "down     - stop the stack"
 	@echo ""
 	@echo "Grafana http://localhost:3000 | Prometheus http://localhost:9090 | Alertmanager http://localhost:9093"
+
+env:
+	@if [ -f .env ]; then echo ".env already exists, leaving it alone"; 	else cp .env.example .env && echo "created .env from .env.example - edit the placeholders"; fi
 
 venv:
 	py -3.12 -m venv .venv
@@ -76,13 +86,13 @@ mlflow:
 # Phase 4: load detected episodes into Postgres, then exercise the MCP tools.
 alerts:
 	docker compose up -d postgres
-	$(PYTHON) -m scripts.load_alerts
+	$(LOAD_ENV) $(PYTHON) -m scripts.load_alerts
 
 mcp-verify:
-	$(PYTHON) -m scripts.verify_mcp
+	$(LOAD_ENV) $(PYTHON) -m scripts.verify_mcp
 
 mcp-serve:
-	$(PYTHON) -m mcp_server.server
+	$(LOAD_ENV) $(PYTHON) -m mcp_server.server
 
 data:
 	$(PYTHON) -m scripts.download_data

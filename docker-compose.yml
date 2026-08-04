@@ -94,8 +94,8 @@ services:
     ports:
       - "3000:3000"
     environment:
-      GF_SECURITY_ADMIN_USER: admin
-      GF_SECURITY_ADMIN_PASSWORD: admin
+      GF_SECURITY_ADMIN_USER: ${GRAFANA_ADMIN_USER:-admin}
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:?set GRAFANA_ADMIN_PASSWORD in .env (see .env.example)}
       GF_AUTH_ANONYMOUS_ENABLED: "true"
       GF_AUTH_ANONYMOUS_ORG_ROLE: Admin
       GF_USERS_DEFAULT_THEME: light
@@ -105,21 +105,22 @@ services:
     depends_on:
       - prometheus
 
-  # Alert history and asset metadata for the Phase 4 MCP server. Nothing writes
-  # to it yet -- the detector that produces real alert rows is Phase 3.
+  # Alert history and asset metadata for the MCP server. Populated by
+  # scripts/load_alerts.py (make alerts), which writes one row per detected
+  # alert episode along with whether it coincided with a documented failure.
   postgres:
     image: postgres:17-alpine
     container_name: swakde-postgres
     ports:
-      - "5432:5432"
+      - "${POSTGRES_PORT:-5432}:5432"
     environment:
-      POSTGRES_USER: swakde
-      POSTGRES_PASSWORD: swakde
-      POSTGRES_DB: swakde
+      POSTGRES_USER: ${POSTGRES_USER:-swakde}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env (see .env.example)}
+      POSTGRES_DB: ${POSTGRES_DB:-swakde}
     volumes:
       - postgres-data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U swakde"]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-swakde}"]
       interval: 10s
       timeout: 5s
       retries: 5
