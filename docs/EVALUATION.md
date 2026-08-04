@@ -276,6 +276,15 @@ rule at these window sizes:
 
 > **The sketch only saves memory when `dim` is greater than about `5 x rows`.**
 
+Every figure in this section is measured on the pure-Python core, which is the
+default and the oracle. Phase 5's C++ core holds a cell in 345 bytes rather than
+761 (`docs/PERFORMANCE.md`), and since the crossover is linear in
+`bytes_per_cell`, it scales the whole rule by that factor: `dim > ~2.3 x rows`,
+i.e. ~750 dimensions at `rows=400` instead of ~1,650. The conclusion below does
+not change — seven channels is still two orders of magnitude short — but the
+boundary is a property of the implementation's constant as much as of the
+algorithm, and a leaner implementation moves it.
+
 #### Why that is an awkward rule
 
 Accuracy needs rows. The source paper sweeps 100–3,200 of them, and our own

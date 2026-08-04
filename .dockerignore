@@ -1,0 +1,27 @@
+# Keep host build artifacts out of the image. A compiled extension is
+# platform- and interpreter-specific, so copying one in from the build host --
+# a Windows .pyd, or a .so from a different Python -- either does nothing or
+# shadows the one the image builds for itself.
+build/
+dist/
+*.pyd
+*.so
+*.obj
+__pycache__/
+*.pyc
+*.egg-info/
+
+.git/
+.venv/
+.pytest_cache/
+
+# Datasets and experiment output are mounted or regenerated, never baked in.
+data/
+mlruns/
+mlflow.db
+mlartifacts/
+docs/
+
+.env
+.env.*
+!.env.example

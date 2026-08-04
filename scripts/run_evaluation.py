@@ -96,7 +96,10 @@ class ExactWindowedKDE:
 
 
 def build_score_series(
-    method: str, frame: pd.DataFrame, feature_set: str = "analog"
+    method: str,
+    frame: pd.DataFrame,
+    feature_set: str = "analog",
+    backend: str = "python",
 ) -> pd.DataFrame:
     analog_columns, digital_columns = FEATURE_SETS[feature_set]
     raw = frame[list(analog_columns)].to_numpy(dtype=float)
@@ -119,6 +122,7 @@ def build_score_series(
             window_size=SETTINGS.window_size,
             eh_relative_error=SETTINGS.eh_relative_error,
             rng=rng,
+            backend=backend,
         )
         window_size = SETTINGS.window_size
     elif method == "exact":
@@ -258,6 +262,12 @@ def main() -> int:
     parser.add_argument("--features", choices=tuple(FEATURE_SETS), default="analog")
     parser.add_argument("--report-only", action="store_true",
                         help="use the cached score series, do not replay")
+    # Only affects `--method swakde`. Defaults to the Python core so a re-run
+    # reproduces the published numbers on any machine; the native core is
+    # bitwise identical (tests/test_native_parity.py) and ~19x faster, which
+    # turns a full pass from ~24 minutes into ~77 seconds.
+    parser.add_argument("--backend", choices=("python", "native", "auto"), default="python",
+                        help="cell-array core for the sketch (default: python)")
     args = parser.parse_args()
 
     path = cache_path(args.method, args.features)
@@ -275,7 +285,7 @@ def main() -> int:
         print(f"Replaying {len(frame):,} readings through {args.method} "
               f"(rows={SETTINGS.rows}, k={SETTINGS.k}, window={SETTINGS.window_size}, "
               f"features={args.features}, dim={feature_dimension(args.features)}) ...")
-        series = build_score_series(args.method, frame, args.features)
+        series = build_score_series(args.method, frame, args.features, args.backend)
         series.to_parquet(path, index=False)
         print(f"Cached score series -> {path.name}")
 

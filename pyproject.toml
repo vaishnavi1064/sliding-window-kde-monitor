@@ -32,7 +32,10 @@ streaming = [
 ]
 
 [build-system]
-requires = ["setuptools>=68"]
+# pybind11 builds the optional C++17 core (Phase 5). It is a build-time
+# requirement only -- the extension is declared `optional`, so a machine with no
+# compiler still installs a working pure-Python package. See setup.py.
+requires = ["setuptools>=68", "pybind11>=2.13"]
 build-backend = "setuptools.build_meta"
 
 [tool.setuptools.packages.find]

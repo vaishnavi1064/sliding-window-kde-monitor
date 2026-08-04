@@ -6,13 +6,15 @@ PYTHON := .venv/Scripts/python.exe
 # credential is genuinely missing.
 LOAD_ENV := set -a; if [ -f .env ]; then . ./.env; fi; set +a;
 
-.PHONY: help env venv test bench tune memcheck memcheck-rows memcheck-crossover evaluate figures mlflow alerts mcp-verify mcp-serve data up down logs replay anomaly clean
+.PHONY: help env venv native test bench bench-native tune memcheck memcheck-rows memcheck-crossover evaluate figures mlflow alerts mcp-verify mcp-serve data up down logs replay anomaly clean
 
 help:
 	@echo "env      - copy .env.example to .env (edit the placeholders before use)"
 	@echo "venv     - create the 3.12 venv and install the package with dev+streaming deps"
+	@echo "native   - compile the C++17 core (optional; the Python core is the default)"
 	@echo "test     - run all validation tiers"
 	@echo "bench    - benchmark sketch update/query throughput"
+	@echo "bench-native - compare the native core against the Python core"
 	@echo "tune     - sweep detector parameters against real data"
 	@echo "memcheck - measure what cell reclamation buys"
 	@echo "evaluate - full evaluation vs the four documented failures"
@@ -38,11 +40,23 @@ venv:
 	$(PYTHON) -m pip install --upgrade pip
 	$(PYTHON) -m pip install -e ".[dev,streaming]"
 
+# Phase 5. Optional: every validation tier passes without it, and the Python
+# core stays the default and the oracle. Needs a C++17 compiler -- on Windows the
+# Visual Studio Build Tools, which scripts/build_native.py locates itself.
+native:
+	$(PYTHON) -m pip install -q "pybind11>=2.13" "setuptools>=68"
+	$(PYTHON) -m scripts.build_native
+
 test:
 	$(PYTHON) -m pytest -v
 
 bench:
 	$(PYTHON) -m scripts.benchmark
+
+# Native vs Python: throughput, per-update latency, and cell memory. Runs each
+# measurement in its own process so the RSS figures mean something.
+bench-native:
+	$(PYTHON) -m scripts.benchmark_native
 
 # Replays the real data through the real sketch in-process, so detector
 # parameters can be chosen from measured separation in seconds rather than

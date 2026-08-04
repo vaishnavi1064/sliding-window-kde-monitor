@@ -32,6 +32,14 @@ class Settings:
     eh_relative_error: float = float(_env("SKETCH_EH_ERROR", "0.1"))
     lsh_width: float = float(_env("SKETCH_WIDTH", "2.0"))  # p-stable bucket width
 
+    # Which cell-array core to run: "auto" prefers the C++17 one and falls back
+    # to Python when it was not compiled, "python" and "native" force the choice.
+    # The two are bitwise identical (tests/test_native_parity.py), so this is a
+    # throughput setting, not a behavioural one. The library default is "python"
+    # -- research results should not depend on the build host -- but the pipeline
+    # is where the native core is worth having, so it opts in.
+    sketch_backend: str = _env("SKETCH_BACKEND", "auto")
+
     warmup: int = int(_env("SKETCH_WARMUP", "2000"))
     # Density is only meaningful once the window has filled.
     query_every: int = int(_env("QUERY_EVERY", "10"))

@@ -82,6 +82,10 @@ def main() -> int:
     print(f"Metrics on :{args.metrics_port}/metrics")
 
     sketch = build_sketch(kernel=args.kernel, dim=len(ANALOG_COLUMNS))
+    # Report the resolved core, not the requested one: with SKETCH_BACKEND=auto a
+    # container built without a compiler silently falls back to the Python core,
+    # and that should be visible in the logs rather than inferred from throughput.
+    print(f"Sketch core: {sketch.backend}")
     standardizer = WarmupStandardizer(len(ANALOG_COLUMNS), warmup=SETTINGS.warmup)
     quality = QualityMonitor(ANALOG_COLUMNS)
     scorer = RollingAnomalyScorer()
@@ -172,7 +176,7 @@ def main() -> int:
                 density = sketch.query(x, clock)
                 QUERY_SECONDS.observe(time.perf_counter() - started)
                 DENSITY.set(density)
-                CELLS.set(len(sketch.cells))
+                CELLS.set(sketch.cell_count)
 
                 # Density is not comparable across time until the sliding
                 # window is full: while it fills, density ramps up from zero
@@ -191,7 +195,7 @@ def main() -> int:
             if now - reported >= 10.0:
                 print(
                     f"  clock={clock:,}  density={DENSITY._value.get():.2f}  "
-                    f"score={ANOMALY_SCORE._value.get():.2f}  cells={len(sketch.cells):,}"
+                    f"score={ANOMALY_SCORE._value.get():.2f}  cells={sketch.cell_count:,}"
                 )
                 reported = now
     except KeyboardInterrupt:

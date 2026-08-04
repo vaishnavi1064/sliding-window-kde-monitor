@@ -1,9 +1,11 @@
 import math
+from dataclasses import replace
 from datetime import datetime, timedelta
 
 import numpy as np
 import pytest
 
+from sketch import native
 from streaming.failures import FAILURES, failure_at
 from streaming.features import (
     ANALOG_COLUMNS,
@@ -251,6 +253,49 @@ class TestRollingAnomalyScorer:
         for _ in range(200):
             score = scorer.score(42.0)
         assert score == 0.0
+
+
+class TestSketchFactory:
+    """The Phase 5 backend wiring.
+
+    `build_sketch` is the pipeline's only path to a sketch, and it has two kernel
+    branches -- so a backend threaded through one and not the other would leave
+    the deployed consumer silently on the Python core.
+    """
+
+    def _build(self, monkeypatch, backend: str, kernel: str = "euclidean"):
+        from streaming import sketch_factory
+
+        # SETTINGS is a frozen dataclass, so replace the whole object rather than
+        # trying to set an attribute on it.
+        monkeypatch.setattr(
+            sketch_factory,
+            "SETTINGS",
+            replace(sketch_factory.SETTINGS, sketch_backend=backend),
+        )
+        return sketch_factory.build_sketch(kernel=kernel, dim=len(ANALOG_COLUMNS))
+
+    @pytest.mark.parametrize("kernel", ["euclidean", "angular"])
+    def test_python_backend_is_honoured_for_both_kernels(self, monkeypatch, kernel):
+        assert self._build(monkeypatch, "python", kernel).backend == "python"
+
+    @pytest.mark.parametrize("kernel", ["euclidean", "angular"])
+    def test_auto_resolves_to_whatever_was_built(self, monkeypatch, kernel):
+        # `auto` must never fail: it is the pipeline default, and a container
+        # built without a compiler still has to run.
+        sketch = self._build(monkeypatch, "auto", kernel)
+        assert sketch.backend == ("native" if native.AVAILABLE else "python")
+
+        # And the sketch it returns has to actually work.
+        point = np.zeros(len(ANALOG_COLUMNS))
+        for t in range(1, 21):
+            sketch.update(point, t)
+        assert sketch.query(point, 20) > 0
+        assert sketch.cell_count > 0
+
+    def test_unknown_backend_is_rejected(self, monkeypatch):
+        with pytest.raises(ValueError, match="backend"):
+            self._build(monkeypatch, "cpp")
 
 
 class TestFailureGroundTruth:

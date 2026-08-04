@@ -7,6 +7,11 @@ __pycache__/
 .ruff_cache/
 build/
 dist/
+
+# compiled native core -- build it with `make native`
+*.pyd
+*.so
+*.obj
 .venv/
 venv/
 

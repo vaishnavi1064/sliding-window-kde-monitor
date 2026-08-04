@@ -5,7 +5,11 @@ on:
   pull_request:
 
 jobs:
-  test:
+  # The Python core alone, which is the oracle (CLAUDE.md section 13) and the
+  # library default. SWAKDE_SKIP_NATIVE is what makes this test what it claims
+  # to: every GitHub Linux runner ships g++, so without it the extension would
+  # be built here too and the no-compiler path would never be exercised.
+  python-core:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -14,12 +18,59 @@ jobs:
         with:
           python-version: "3.12"
 
-      - name: Install
+      - name: Install without the native core
+        env:
+          SWAKDE_SKIP_NATIVE: "1"
         run: pip install -e ".[dev]"
+
+      - name: Confirm the native core really is absent
+        run: |
+          python -c "
+          import sketch.native as n
+          assert not n.AVAILABLE, 'expected no native core in this job'
+          print('native core absent as expected:', n.IMPORT_ERROR)
+          "
 
       # The full suite runs in ~15s, so all three validation tiers stay in the
       # fast path. The heavy parameter sweeps the paper reports (rows to 3200,
       # windows to 2048, Monte Carlo repetitions) belong in the Phase 3
       # evaluation notebook, not here.
+      - name: Test
+        run: pytest -v
+
+  # The native core, plus the parity suite that pins it to the Python one.
+  # Both platforms: the C++ is developed on Windows/MSVC and deployed on
+  # Linux/gcc, and a ring-buffer index bug need not show up on both.
+  native-core:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      # SWAKDE_REQUIRE_NATIVE turns a compile failure into an install failure.
+      # Without it the extension is `optional`, so a broken core would install
+      # quietly and every parity test would skip -- reporting green.
+      - name: Install with the native core
+        env:
+          SWAKDE_REQUIRE_NATIVE: "1"
+        run: pip install -e ".[dev]"
+
+      - name: Confirm the native core is present
+        run: |
+          python -c "
+          import sketch.native as n
+          assert n.AVAILABLE, f'native core failed to build: {n.IMPORT_ERROR}'
+          print('native core built:', n.compiler())
+          "
+
+      # Runs both the parity suite and all three validation tiers. Parity is
+      # asserted bitwise, so this is what stops the two cores from drifting.
       - name: Test
         run: pytest -v

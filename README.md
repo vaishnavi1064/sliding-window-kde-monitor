@@ -17,7 +17,9 @@ theirs.
 
 1. **Engineering** — the authors' reference implementation is an unoptimized research
    prototype. We re-implement the sketch cleanly, with tests, validated against
-   sketch-independent ground truth, and (in progress) an optimized native core.
+   sketch-independent ground truth, plus an optimized C++17 core that is ~10–20x faster
+   than *that already-vectorized Python implementation* — not than a naive one — and
+   bit-for-bit identical to it.
 2. **Application** — the paper never applies this to industrial-sensor anomaly detection.
    We do, against a real dataset with documented ground-truth failures.
 
@@ -33,10 +35,10 @@ We do not claim a new algorithm.
 | 2 | Kafka streaming, Prometheus/Grafana/Alertmanager | Done — alert verified firing end to end |
 | 3 | Anomaly detector + MetroPT evaluation | Done |
 | 4 | MCP server | Done — three tools verified end to end |
-| 5 | C++17 + pybind11 optimized core | Planned |
+| 5 | C++17 + pybind11 optimized core | Done — ~10–20x over the optimized Python core, bitwise-identical |
 | 6 | Adaptive window size (research extension) | Stretch |
 
-88 tests green. Engineering log in [`docs/PERFORMANCE.md`](docs/PERFORMANCE.md); findings from
+125 tests green. Engineering log in [`docs/PERFORMANCE.md`](docs/PERFORMANCE.md); findings from
 running against the real data in [`docs/DATA_NOTES.md`](docs/DATA_NOTES.md); evaluation
 methodology in [`docs/EVALUATION.md`](docs/EVALUATION.md).
 
@@ -62,6 +64,10 @@ window** — and this is the contribution. Its footprint is independent of dimen
 exact storage grows with it, so there is a crossover, measured here at roughly
 
 > `dim > 5 × rows`
+
+on the Python core, or `dim > ~2.3 × rows` on the leaner C++ one — the boundary is linear in
+bytes-per-cell, so a 2.2x cheaper cell moves it by that factor and no further. Seven channels
+sits two orders of magnitude below either.
 
 Exact windowed KDE needs 0.20 MB for MetroPT; the sketch needs 5–48 MB for the same
 detection quality. Because accuracy demands rows and memory is linear in rows, **the
@@ -127,6 +133,14 @@ The three validation tiers (see `CLAUDE.md` §9) are: exponential-histogram unit
 un-windowed parity against plain RACE and full-stream brute force; and windowed accuracy
 against brute-force last-N KDE within the paper's own theoretical bound.
 
+The C++ core adds a fourth check. It is not held to a tolerance but to **bit-for-bit equality**
+with the Python core — identical query output, and identical per-cell state down to bucket
+timestamps and sizes ([`tests/test_native_parity.py`](tests/test_native_parity.py)). Both cores sum
+exactly representable doubles in the same order, so there is no floating-point reordering to excuse
+a difference, and a percentage tolerance would hide the off-by-one errors a reimplementation of a
+merge cascade actually produces. The Python core stays the default and the oracle; CI runs one job
+with the native core absent and one with it required, on Linux and Windows.
+
 ## Getting started
 
 The sketch on its own needs only numpy:
@@ -136,6 +150,20 @@ py -3.12 -m venv .venv
 .venv/Scripts/python.exe -m pip install -e ".[dev]"
 .venv/Scripts/python.exe -m pytest
 ```
+
+### The native core (optional)
+
+Everything above passes without it, and `backend="python"` remains the default. To build and
+benchmark the C++17 core:
+
+```bash
+make native        # compile it in place (needs a C++17 compiler)
+make bench-native  # native vs Python: throughput, latency, memory
+```
+
+Needs the Visual Studio C++ Build Tools on Windows or g++/clang elsewhere;
+`scripts/build_native.py` locates the MSVC environment itself. The streaming stack picks the
+native core up automatically (`SKETCH_BACKEND=auto`) and the consumer logs which core it resolved.
 
 ### The monitoring stack
 
@@ -166,10 +194,11 @@ make mcp-serve   # run the MCP server on stdio
 
 ```
 sketch/     the sketch itself: exponential histogram, LSH, SW-AKDE, RACE baseline, brute-force oracle
+src/        the C++17 core behind the same interface (Phase 5), built by setup.py
 streaming/  producer, consumer, feature extraction, data-quality checks, scoring
 docker/     Dockerfile and the Prometheus / Grafana / Alertmanager configuration
-scripts/    dataset download, throughput benchmark
-tests/      the three validation tiers plus streaming component tests
+scripts/    dataset download, throughput benchmarks, native build driver
+tests/      the three validation tiers, native parity, plus streaming component tests
 docs/       reference audit, performance log, data findings, and the source paper
 CLAUDE.md   full project brief: novelty framing, findings, build plan, tech-stack rationale
 ```

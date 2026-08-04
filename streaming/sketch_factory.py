@@ -25,6 +25,7 @@ def build_sketch(kernel: str, dim: int, seed: int | None = 0) -> SlidingWindowKD
             window_size=SETTINGS.window_size,
             eh_relative_error=SETTINGS.eh_relative_error,
             rng=rng,
+            backend=SETTINGS.sketch_backend,
         )
     if kernel == "angular":
         return SlidingWindowAngularKDE(
@@ -34,5 +35,6 @@ def build_sketch(kernel: str, dim: int, seed: int | None = 0) -> SlidingWindowKD
             window_size=SETTINGS.window_size,
             eh_relative_error=SETTINGS.eh_relative_error,
             rng=rng,
+            backend=SETTINGS.sketch_backend,
         )
     raise ValueError(f"unknown kernel: {kernel}")

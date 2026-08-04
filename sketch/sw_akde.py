@@ -1,7 +1,7 @@
 import numpy as np
 
 from sketch.angular_hash import AngularHashBank
-from sketch.exponential_histogram import ExponentialHistogram
+from sketch.cell_store import make_cell_store, resolve_backend
 from sketch.p_stable import PStableHashBank
 
 
@@ -12,6 +12,13 @@ class SlidingWindowKDE:
     Kernel-agnostic -- takes any hash bank exposing `rows` and `codes(x)`. Use
     SlidingWindowAngularKDE or SlidingWindowEuclideanKDE unless you are supplying
     your own bank.
+
+    This class owns the hashing and delegates the cell array to a store, which is
+    either the pure-Python one or the C++17 core (see sketch/cell_store.py). The
+    default is `"python"`: it is the implementation validated against brute-force
+    ground truth, and results should not depend on whether the machine that ran
+    them happened to have a compiler. Pass `backend="auto"` to prefer the native
+    core when it is built, or `"native"` to require it.
     """
 
     def __init__(
@@ -20,67 +27,74 @@ class SlidingWindowKDE:
         window_size: int,
         eh_relative_error: float = 0.1,
         compact_every: int | None = None,
+        backend: str = "python",
     ):
         self.hashes = hashes
         self.rows = hashes.rows
         self.window_size = window_size
         self.eh_relative_error = eh_relative_error
-        self.cells: dict[tuple[int, int], ExponentialHistogram] = {}
         # Reclaim dead cells once per window by default: any cell not touched
         # for a whole window is certainly empty, so this is the natural period.
         self.compact_every = window_size if compact_every is None else compact_every
-        self._next_compaction = self.compact_every
-        self.compactions = 0
-        self.cells_reclaimed = 0
+        # Resolved rather than as requested, so `backend` afterwards names the
+        # core actually in use and a benchmark cannot mislabel which one ran.
+        self.backend = resolve_backend(backend)
+        self._store = make_cell_store(
+            self.backend,
+            self.rows,
+            self.window_size,
+            self.eh_relative_error,
+            self.compact_every,
+        )
+
+    @property
+    def cells(self):
+        """The live cell dictionary. Python backend only.
+
+        The native core keeps its cells in C++ hash maps with no Python objects
+        to hand out; `cell_count` and `memory_bytes()` work on both.
+        """
+        cells = getattr(self._store, "cells", None)
+        if cells is None:
+            raise AttributeError(
+                "the native backend holds no Python cell dictionary; "
+                "use cell_count or memory_bytes() instead"
+            )
+        return cells
+
+    @property
+    def cell_count(self) -> int:
+        return self._store.cell_count
+
+    @property
+    def compactions(self) -> int:
+        return self._store.compactions
+
+    @property
+    def cells_reclaimed(self) -> int:
+        return self._store.cells_reclaimed
+
+    def memory_bytes(self) -> int:
+        """Approximate bytes held by the cell array (see the store's docstring)."""
+        return self._store.memory_bytes()
+
+    def cell_state(self, row: int, code: int):
+        """`(total, last, [(timestamp, size), ...])` for one cell, or None.
+
+        Works on either backend, which `cells` cannot.
+        """
+        return self._store.cell_state(row, code)
 
     def compact(self, t: int) -> int:
-        """Drop cells whose contents have all expired. Returns how many went.
-
-        Expiry is lazy and per-cell: a histogram only prunes itself when it is
-        touched. A cell that goes cold is therefore never revisited and holds
-        its buckets forever. Finding F covers the *correctness* half of this (a
-        stale cell reports a frozen count, so density never decays); this is the
-        *memory* half, which the paper's model hides.
-
-        The published space bound O(RW/eps * log^2 N) counts a dense R x W
-        array, where "unused cell" costs nothing extra. Any real implementation
-        stores cells sparsely -- most are empty -- and then nothing bounds the
-        dictionary: it accumulates one entry per distinct cell ever visited.
-        Measured on MetroPT-3 before this existed, a rows=400 sketch reached
-        2.7 GB part way through 1.5M readings while throughput collapsed from
-        ~810 to ~300 updates/s under GC pressure.
-
-        Dropping a fully expired histogram is semantically free: it contributes
-        exactly zero to any query. Running once per window makes the sweep
-        O(1) amortised per update.
-        """
-        dead = [key for key, eh in self.cells.items() if eh.is_expired(t)]
-        for key in dead:
-            del self.cells[key]
-        self.compactions += 1
-        self.cells_reclaimed += len(dead)
-        return len(dead)
+        """Drop cells whose contents have all expired. Returns how many went."""
+        return self._store.compact(t)
 
     def update(self, x, t: int) -> None:
         """Record element `x` at logical time `t`.
 
         `t` must be a monotonic per-event counter, not a wall clock (Finding B).
         """
-        codes = self.hashes.codes(x)
-        for row in range(self.rows):
-            key = (row, int(codes[row]))
-            eh = self.cells.get(key)
-            if eh is None:
-                eh = ExponentialHistogram(self.window_size, self.eh_relative_error)
-                self.cells[key] = eh
-            # Unconditional add on both the create and existing-cell paths --
-            # the reference only adds on the existing-cell branch, silently
-            # dropping every cell's first arrival (Finding A).
-            eh.add(t)
-
-        if t >= self._next_compaction:
-            self.compact(t)
-            self._next_compaction = t + self.compact_every
+        self._store.update(self.hashes.codes(x), t)
 
     def query(self, x, t: int) -> float:
         """Estimated kernel density around `x` over the last `window_size` elements.
@@ -90,13 +104,7 @@ class SlidingWindowKDE:
         cells that have gone cold expire on read instead of reporting a frozen
         count (Finding F).
         """
-        codes = self.hashes.codes(x)
-        total = 0.0
-        for row in range(self.rows):
-            eh = self.cells.get((row, int(codes[row])))
-            if eh is not None:
-                total += eh.count_estimate(t)
-        return total / self.rows
+        return self._store.query(self.hashes.codes(x), t)
 
 
 class SlidingWindowAngularKDE(SlidingWindowKDE):
@@ -115,12 +123,14 @@ class SlidingWindowAngularKDE(SlidingWindowKDE):
         eh_relative_error: float = 0.1,
         rng: np.random.Generator | None = None,
         compact_every: int | None = None,
+        backend: str = "python",
     ):
         super().__init__(
             AngularHashBank(rows, k, dim, rng),
             window_size,
             eh_relative_error,
             compact_every,
+            backend,
         )
         self.k = k
 
@@ -144,12 +154,14 @@ class SlidingWindowEuclideanKDE(SlidingWindowKDE):
         hash_range: int = 1 << 20,
         rng: np.random.Generator | None = None,
         compact_every: int | None = None,
+        backend: str = "python",
     ):
         super().__init__(
             PStableHashBank(rows, k, dim, width, hash_range, rng),
             window_size,
             eh_relative_error,
             compact_every,
+            backend,
         )
         self.k = k
         self.width = width
