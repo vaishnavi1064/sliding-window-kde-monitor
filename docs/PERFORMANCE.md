@@ -261,6 +261,43 @@ Without the first, the pure-Python path would never be exercised — every GitHu
 g++. Without the second, a broken core would install quietly (the extension is declared `optional`)
 and every parity test would skip while reporting green.
 
+## Verification state
+
+What has actually been observed, and what has not. Kept here rather than only in a commit message
+so it cannot drift out of view.
+
+| Claim | State | Evidence |
+|---|---|---|
+| Compiles under MSVC (local) | **Verified** | `MSVC 1944`, `/O2`, zero warnings at `/W3` |
+| Compiles under gcc | **Verified** | CI run 30979739606, ubuntu-latest: `native core built: gcc 13.3.0` |
+| Compiles under a second MSVC | **Verified** | same run, windows-latest: `native core built: MSVC 1951` |
+| `pip install -e .` builds it (no custom build driver) | **Verified** | both native-core jobs: "Install with the native core" → success |
+| `SWAKDE_SKIP_NATIVE=1` yields a working pure-Python install | **Verified** | python-core job: "Confirm the native core really is absent" → success |
+| Parity suite green | **Verified locally only** | 130 pass with the extension, 93 pass + 37 skip without |
+| **CI demonstrates parity** | **NOT verified** | all three jobs fail at `Test`; see below |
+| **Native core loads in the container** | **NOT verified** | `docker compose build consumer` has never run |
+
+**CI is red, for a reason that predates this work.** `pytest` aborts during collection on every
+job:
+
+```
+tests/test_evaluation.py:4:  import pandas as pd  → ModuleNotFoundError: No module named 'pandas'
+tests/test_mcp_server.py:12: import pandas as pd  → ModuleNotFoundError: No module named 'pandas'
+Interrupted: 2 errors during collection
+```
+
+CI installs `.[dev]`, which is numpy plus pytest; those two modules import pandas at module scope.
+This is not a Phase 5 regression — the repository has had three CI runs ever and all three failed
+identically, including the two on `main` (`a5106cb`, `5dc5530`) that precede this branch. It is
+left unfixed deliberately, so the failure stays visible rather than being folded into an unrelated
+commit. The fix is one line (install `.[dev,streaming]`, or move pandas into the `dev` extra), but
+it is a Phase 3/4 packaging defect and belongs in its own change.
+
+The consequence for Phase 5 is specific and should not be overstated in either direction: CI
+*proves the C++ compiles and installs on gcc and MSVC*, which is what it was added for, and does
+*not yet prove the two cores agree*, because the tests never execute there. That comparison is
+currently evidenced only by local runs.
+
 ## What is still true, and what changed
 
 - **The Python core remains the default and the oracle** (CLAUDE.md §13). Results should not depend

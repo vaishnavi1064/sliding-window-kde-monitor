@@ -38,7 +38,11 @@ We do not claim a new algorithm.
 | 5 | C++17 + pybind11 optimized core | Done — ~10–20x over the optimized Python core, bitwise-identical |
 | 6 | Adaptive window size (research extension) | Stretch |
 
-125 tests green. Engineering log in [`docs/PERFORMANCE.md`](docs/PERFORMANCE.md); findings from
+130 tests green locally (93 + 37 skipped without the native core). **GitHub Actions is currently
+red** — `pytest` aborts during collection because `tests/test_evaluation.py` and
+`tests/test_mcp_server.py` import pandas while CI installs only the `dev` extra. That predates
+Phase 5 (all three CI runs ever have failed the same way, including two on `main`) and is tracked
+in [`docs/PERFORMANCE.md`](docs/PERFORMANCE.md) under "Verification state". Engineering log in [`docs/PERFORMANCE.md`](docs/PERFORMANCE.md); findings from
 running against the real data in [`docs/DATA_NOTES.md`](docs/DATA_NOTES.md); evaluation
 methodology in [`docs/EVALUATION.md`](docs/EVALUATION.md).
 
@@ -141,6 +145,10 @@ a difference, and a percentage tolerance would hide the off-by-one errors a reim
 merge cascade actually produces. The Python core stays the default and the oracle; CI runs one job
 with the native core absent and one with it required, on Linux and Windows.
 
+That parity is currently evidenced by **local runs only**. CI has proven the C++ compiles and
+installs under gcc 13.3.0 and MSVC 1951, but its `pytest` step never executes — see "Verification
+state" in [`docs/PERFORMANCE.md`](docs/PERFORMANCE.md) for exactly what is and is not established.
+
 ## Getting started
 
 The sketch on its own needs only numpy:
@@ -188,6 +196,48 @@ Alertmanager on `:9093`. `make down` stops everything.
 make alerts      # load detected episodes into Postgres
 make mcp-verify  # exercise the three MCP tools end to end
 make mcp-serve   # run the MCP server on stdio
+```
+
+### Without `make`
+
+Every target is a thin wrapper around one or two commands, so nothing here needs `make`
+installed — useful on a clean Windows clone, where it usually isn't. `$PY` below is the venv
+interpreter: `.venv/Scripts/python.exe` on Windows, `.venv/bin/python` on Linux and macOS.
+(The Makefile hardcodes the Windows path.)
+
+| `make` target | Direct equivalent |
+|---|---|
+| `env` | `cp .env.example .env` |
+| `venv` | `py -3.12 -m venv .venv && $PY -m pip install -e ".[dev,streaming]"` |
+| `native` | `$PY -m pip install "pybind11>=2.13" "setuptools>=68" && $PY -m scripts.build_native` |
+| `test` | `$PY -m pytest -v` |
+| `bench` | `$PY -m scripts.benchmark` |
+| `bench-native` | `$PY -m scripts.benchmark_native` |
+| `tune` | `$PY -m scripts.tune_detector` |
+| `memcheck` | `$PY -m scripts.memory_check` |
+| `memcheck-rows` | `$PY -m scripts.memory_check --records 150000 --rows-sweep` |
+| `memcheck-crossover` | `$PY -m scripts.memory_check --records 120000 --crossover` |
+| `evaluate` | `$PY -m scripts.run_evaluation --method swakde` (then `race`, `exact`), followed by `$PY -m scripts.compare_methods`, `.horizon_sensitivity`, `.diagnose_failures` |
+| `figures` | `$PY -m scripts.make_plots` |
+| `mlflow` | `$PY -m scripts.log_to_mlflow` |
+| `data` | `$PY -m scripts.download_data` |
+| `alerts` | `docker compose up -d postgres && $PY -m scripts.load_alerts` |
+| `mcp-verify` | `$PY -m scripts.verify_mcp` |
+| `mcp-serve` | `$PY -m mcp_server.server` |
+| `up` | `docker compose up -d --build` |
+| `replay` | `docker compose --profile replay run --rm producer python -m streaming.producer --bootstrap kafka:9094` |
+| `anomaly` | as `replay`, plus `--speedup 60 --max-records 26000 --inject-anomaly-at 14000 --inject-duration 12000 --inject-scale 4` |
+| `logs` | `docker compose logs -f consumer` |
+| `down` | `docker compose down` |
+
+The targets that read `.env` (`alerts`, `mcp-verify`, `mcp-serve`) rely on the Makefile exporting
+it first; run them with the variables already in your environment, or export `.env` yourself.
+
+Two Phase 5 verification modes have no `make` target and are invoked directly:
+
+```bash
+$PY -m scripts.benchmark_native --tail-check                      # p99 tail attribution
+$PY -m scripts.benchmark_native --eval-parity --records 30000     # both cores, real data
 ```
 
 ## Layout

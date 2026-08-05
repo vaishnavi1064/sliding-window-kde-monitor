@@ -1,3 +1,9 @@
+# Windows venv layout. On Linux/macOS use .venv/bin/python instead.
+#
+# Every target below is a thin wrapper around one or two commands, and the README
+# ("Without make") lists the direct equivalent for each one -- `make` is not
+# installed by default on Windows, so nothing here should be the only way to run
+# something.
 PYTHON := .venv/Scripts/python.exe
 
 # docker compose reads .env by itself; the Python entry points run on the host
