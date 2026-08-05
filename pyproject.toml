@@ -7,8 +7,19 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+# Everything needed to run the test suite, and nothing else. The suite spans the
+# feature areas below, so `pytest` alone does not cover it: two modules are
+# imported at collection time and abort the whole run if missing.
+#
+# These are deliberately listed here rather than reached by installing the
+# feature extras. `dev,streaming,mcp` would work too, but it drags in
+# confluent-kafka, pyarrow, requests, prometheus-client and psycopg[binary] --
+# none of which any test touches (mcp_server.store imports psycopg lazily, inside
+# the connect method) -- which defeats the "stay light" intent below.
 dev = [
     "pytest",
+    "pandas",   # tests/test_evaluation.py, tests/test_mcp_server.py, evaluation/*
+    "mcp",      # tests/test_mcp_server.py -> mcp_server.server imports it at module scope
 ]
 # All optional: the sketch itself needs only numpy, so CI and the core package
 # stay light. Install what a given task needs.
