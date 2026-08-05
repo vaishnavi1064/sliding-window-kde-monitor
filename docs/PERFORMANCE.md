@@ -273,30 +273,29 @@ so it cannot drift out of view.
 | Compiles under a second MSVC | **Verified** | same run, windows-latest: `native core built: MSVC 1951` |
 | `pip install -e .` builds it (no custom build driver) | **Verified** | both native-core jobs: "Install with the native core" → success |
 | `SWAKDE_SKIP_NATIVE=1` yields a working pure-Python install | **Verified** | python-core job: "Confirm the native core really is absent" → success |
-| Parity suite green | **Verified locally only** | 130 pass with the extension, 93 pass + 37 skip without |
-| **CI demonstrates parity** | **NOT verified** | all three jobs fail at `Test`; see below |
+| Parity suite green locally | **Verified** | 130 pass with the extension, 93 pass + 37 skip without |
+| **CI demonstrates parity** | **Verified** | run 30981570447: 37 parity tests execute and pass in both native jobs, skip in the pure-Python job |
 | **Native core loads in the container** | **NOT verified** | `docker compose build consumer` has never run |
 
-**CI is red, for a reason that predates this work.** `pytest` aborts during collection on every
-job:
+**On CI proving parity.** Run 30981570447 (`35f66ba`), all three jobs green:
 
-```
-tests/test_evaluation.py:4:  import pandas as pd  → ModuleNotFoundError: No module named 'pandas'
-tests/test_mcp_server.py:12: import pandas as pd  → ModuleNotFoundError: No module named 'pandas'
-Interrupted: 2 errors during collection
-```
+| job | pytest result | parity tests |
+|---|---|---|
+| native-core (ubuntu-latest) | `130 passed` | 37 executed, 0 skipped |
+| native-core (windows-latest) | `130 passed` | 37 executed, 0 skipped |
+| python-core | `93 passed, 37 skipped` | 0 executed, 37 skipped |
 
-CI installs `.[dev]`, which is numpy plus pytest; those two modules import pandas at module scope.
-This is not a Phase 5 regression — the repository has had three CI runs ever and all three failed
-identically, including the two on `main` (`a5106cb`, `5dc5530`) that precede this branch. It is
-left unfixed deliberately, so the failure stays visible rather than being folded into an unrelated
-commit. The fix is one line (install `.[dev,streaming]`, or move pandas into the `dev` extra), but
-it is a Phase 3/4 packaging defect and belongs in its own change.
+The counts are the point: the parity tests *ran* rather than silently skipping, on both toolchains,
+which is what makes "the two cores are bitwise identical" a CI-enforced invariant rather than a
+claim about one developer's machine. The pure-Python job skipping exactly those 37 is the control.
 
-The consequence for Phase 5 is specific and should not be overstated in either direction: CI
-*proves the C++ compiles and installs on gcc and MSVC*, which is what it was added for, and does
-*not yet prove the two cores agree*, because the tests never execute there. That comparison is
-currently evidenced only by local runs.
+**This took fixing a defect that predated Phase 5.** Until `35f66ba`, CI had never been green in
+this repository: `pytest` aborted during collection on every run, including both on `main`
+(`a5106cb`, `5dc5530`), because `tests/test_evaluation.py` and `tests/test_mcp_server.py` import
+pandas at module scope while CI installed only `pytest`. Notably, the obvious fix of installing
+`.[dev,streaming]` would *not* have worked: pandas was masking a second missing import,
+`mcp_server/server.py` line 30's unguarded `from mcp.server.mcpserver import MCPServer`, and `mcp`
+is in neither extra. The `dev` extra now carries both packages the suite imports.
 
 ## What is still true, and what changed
 

@@ -38,11 +38,8 @@ We do not claim a new algorithm.
 | 5 | C++17 + pybind11 optimized core | Done — ~10–20x over the optimized Python core, bitwise-identical |
 | 6 | Adaptive window size (research extension) | Stretch |
 
-130 tests green locally (93 + 37 skipped without the native core). **GitHub Actions is currently
-red** — `pytest` aborts during collection because `tests/test_evaluation.py` and
-`tests/test_mcp_server.py` import pandas while CI installs only the `dev` extra. That predates
-Phase 5 (all three CI runs ever have failed the same way, including two on `main`) and is tracked
-in [`docs/PERFORMANCE.md`](docs/PERFORMANCE.md) under "Verification state". Engineering log in [`docs/PERFORMANCE.md`](docs/PERFORMANCE.md); findings from
+130 tests green, on CI as well as locally: 130 pass in each native-core job (Linux/gcc and
+Windows/MSVC) and 93 pass with 37 skipped in the job that installs no native core. Engineering log in [`docs/PERFORMANCE.md`](docs/PERFORMANCE.md); findings from
 running against the real data in [`docs/DATA_NOTES.md`](docs/DATA_NOTES.md); evaluation
 methodology in [`docs/EVALUATION.md`](docs/EVALUATION.md).
 
@@ -145,8 +142,8 @@ a difference, and a percentage tolerance would hide the off-by-one errors a reim
 merge cascade actually produces. The Python core stays the default and the oracle; CI runs one job
 with the native core absent and one with it required, on Linux and Windows.
 
-That parity is currently evidenced by **local runs only**. CI has proven the C++ compiles and
-installs under gcc 13.3.0 and MSVC 1951, but its `pytest` step never executes — see "Verification
+That parity is verified on CI, not just locally: all 37 parity tests execute and pass in both
+native-core jobs (gcc 13.3.0 and MSVC 1951) and skip in the pure-Python job. See "Verification
 state" in [`docs/PERFORMANCE.md`](docs/PERFORMANCE.md) for exactly what is and is not established.
 
 ## Getting started
