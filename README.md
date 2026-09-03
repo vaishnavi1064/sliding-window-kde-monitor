@@ -70,6 +70,13 @@ on the Python core, or `dim > ~2.3 × rows` on the leaner C++ one — the bounda
 bytes-per-cell, so a 2.2x cheaper cell moves it by that factor and no further. Seven channels
 sits two orders of magnitude below either.
 
+The 26–236× multiples are **near-trough samples**: compaction sweeps once per window, so the
+live cell count sawtooths roughly 2× within each cycle and these figures are sampled near the
+low point. On a peak basis `rows=400` is closer to **~385×** — which is itself a single observed
+sample 3,000 ticks into one cycle, **not a proven maximum**, since `memory_check` does not track
+a running high-water mark. That makes the negative result stronger, not weaker; see
+[`docs/PROJECT_RECORD.md`](docs/PROJECT_RECORD.md) §9.1.
+
 Exact windowed KDE needs 0.20 MB for MetroPT; the sketch needs 5–48 MB for the same
 detection quality. Because accuracy demands rows and memory is linear in rows, **the
 dimension required to justify the sketch grows with the accuracy you want** — a tension
@@ -84,9 +91,10 @@ measured, is more useful than a demonstration that avoided the question.
 ## Correctness
 
 We validate bottom-up against ground truth that involves no sketch at all, never against the
-reference implementation's outputs — because auditing that implementation turned up eight real
-bugs, documented with evidence in [`docs/REFERENCE_NOTES.md`](docs/REFERENCE_NOTES.md). Some
-trace back to the paper's own pseudocode rather than just the code:
+reference implementation's outputs — because auditing that implementation turned up **seven** real
+bugs, documented with evidence in [`docs/REFERENCE_NOTES.md`](docs/REFERENCE_NOTES.md) and
+enumerated in full in [`docs/PROJECT_RECORD.md`](docs/PROJECT_RECORD.md) §4. Some trace back to the
+paper's own pseudocode rather than just the code:
 
 **Two are in the published algorithm itself**, not only in the reference code — both in
 Algorithm 2 of arXiv:2510.23039 (§4.1), and both active at the `p = 1` setting the paper
@@ -124,6 +132,21 @@ These three are **latent**: the paper sets the concatenation parameter to 1 for 
 experiments, and at `k=1` all three are inert. They break only at `k>1` — the regime the
 LSH-amplification argument is actually about. We fixed them because we intend to use
 `k>1`. **The paper's published numbers stand**, and we make no claim otherwise.
+
+**The remaining two are sliding-window semantics defects in the reference's exponential
+histogram**, both active at any `k` and both caught by tier-1 tests rather than by reading:
+
+- **Finding B — single-step expiry under-evicts.** One cell's histogram is only touched when that
+  cell is hit, so consecutive calls can be arbitrarily far apart in the shared clock and more than
+  one bucket can be expired at once. The reference's single `if` evicts only the oldest, which lets
+  `total` drift to **4×** the brute-force count on a long-gap sequence.
+- **A window-boundary off-by-one.** The reference's `<` keeps a bucket whose timestamp equals
+  `t − window_size`, giving `N+1` elements where the paper's own Problem 1.2 defines `N`. Ours uses
+  `<=`.
+
+That is 2 + 3 + 2 = **seven**. Findings C and D are deliberately not counted: C is the reference
+being *correct* (the paper does specify the mean for SW-AKDE), and D is our validation strategy
+rather than a defect in the source material.
 
 The distinction matters and we keep it throughout: A and F are corrections to the
 *published algorithm* at its own settings; E, G and H are bugs in the *reference code*

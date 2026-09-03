@@ -228,7 +228,9 @@ Measured (`make memcheck-rows`), `window=3600`, `dim=7`:
 
 Exact windowed KDE holds 3600 x 7 floats — **0.20 MB**. The sketch needs
 5–48 MB for the same detection quality. On this workload it is **26–236x more
-expensive than the thing it is supposed to replace.**
+expensive than the thing it is supposed to replace** — and those are
+**near-trough samples** of a compaction sawtooth, worse still on a peak basis.
+See the Phase-5 caveat below the next table.
 
 ![Memory crossover](figures/memory_crossover.png)
 
@@ -258,6 +260,19 @@ Two measured facts make this usable (`make memcheck-crossover`):
 
 - **`bytes_per_cell` is constant**, ~590–800 bytes across every configuration —
   an exponential histogram plus its bucket objects.
+  - **Caveat found later (Phase 5).** That range is not a constant so much as the
+    span of a *sawtooth*. Compaction sweeps once per `window_size` ticks, so the
+    live cell count roughly doubles between sweeps and collapses at each one.
+    Measured at `rows=400`, `window=3600`: **58,421** cells / 46.8 MB / 802 B per
+    cell immediately after a sweep, rising to **116,989** cells / 77.6 MB / 663 B
+    per cell 3,000 ticks later, then collapsing again. The figures in the table
+    above are sampled ~400 ticks after a sweep, i.e. **near the trough**, so they
+    understate the footprint you must actually provision by roughly **1.6x**
+    (77.6 vs 47.5 MB at `rows=400`). That makes the negative result *stronger*,
+    not weaker: on a peak basis the `rows=400` sketch is closer to ~385x exact
+    storage than the 236x quoted above. `bytes_per_cell` moves inversely to the
+    cell count, which is why the crossover rule is less sensitive to this than
+    the absolute megabytes are.
 - **`cells_per_row` depends on the window, not on rows** — it is how many
   distinct LSH cells the window's points occupy, a property of the data. So
   crossover is *linear in rows*.
@@ -280,7 +295,14 @@ Every figure in this section is measured on the pure-Python core, which is the
 default and the oracle. Phase 5's C++ core holds a cell in 345 bytes rather than
 761 (`docs/PERFORMANCE.md`), and since the crossover is linear in
 `bytes_per_cell`, it scales the whole rule by that factor: `dim > ~2.3 x rows`,
-i.e. ~750 dimensions at `rows=400` instead of ~1,650. The conclusion below does
+i.e. ~750 dimensions at `rows=400` instead of ~1,650.
+
+That ratio survives the sawtooth caveat above, which is why it is quoted. Both
+the 761 and the 345 come from the *same* measurement at the *same* clock, with
+both cores holding an identical 83,920 cells — so they are sampled at the same
+point in the compaction cycle and the 345/761 factor is phase-matched. The
+absolute bytes-per-cell figure is cycle-dependent; the ratio between two cores
+measured together is not. The conclusion below does
 not change — seven channels is still two orders of magnitude short — but the
 boundary is a property of the implementation's constant as much as of the
 algorithm, and a leaner implementation moves it.
@@ -290,8 +312,10 @@ algorithm, and a leaner implementation moves it.
 Accuracy needs rows. The source paper sweeps 100–3,200 of them, and our own
 sweeps show error falling with row count. But memory is linear in rows while the
 benefit is not — so **the dimension required to justify the sketch grows with the
-accuracy you demand.** At 100 rows you need ~500 dimensions; at 400 rows,
-~1,650. That tension is not discussed in the paper, and it is the main practical
+accuracy you demand.** At 100 rows you need ~420 dimensions; at 400 rows,
+~1,650 — both read off the table above, which is the measured artifact. (An
+earlier draft of this sentence said "~500" at 100 rows, contradicting its own
+table two sections up; 418 is what the measurement gives.) That tension is not discussed in the paper, and it is the main practical
 thing we can add.
 
 It is consistent with the paper's own experiments, which used 103-, 200- and
@@ -308,7 +332,8 @@ recommend it over our own sketch here.
 That is a negative result for the application, and we are reporting it as the
 finding rather than working around it. It does not undo the engineering: the
 port is correct, 2.9x faster than the naive version, memory-bounded where the
-reference was not, and it surfaced eight real defects in the source material.
+reference was not, and it surfaced **seven** real defects in the source material
+(enumerated in `docs/PROJECT_RECORD.md` §4; Findings C and D are not defects).
 What it does mean is that "apply a sublinear sketch to industrial sensor data"
 was the wrong pairing, and the useful contribution is knowing *where the line
 is* — which now takes a measured answer rather than an assumed one.

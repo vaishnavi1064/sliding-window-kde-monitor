@@ -86,7 +86,14 @@ def compare(methods: list[str]) -> None:
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--methods", nargs="+", default=["swakde", "race"])
+    # `exact` belongs in the default: `make evaluate` pays for a full replay of
+    # it (~10 minutes) immediately before calling this script, and the
+    # sketch-vs-exact gap is the headline result -- omitting it here computed
+    # that baseline and then silently discarded it. scripts/make_plots.py and
+    # scripts/log_to_mlflow.py already default to all three.
+    parser.add_argument(
+        "--methods", nargs="+", default=["swakde", "exact", "race"]
+    )
     args = parser.parse_args()
     compare(args.methods)
     return 0
