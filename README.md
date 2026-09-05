@@ -1,8 +1,46 @@
 # Real-Time Streaming Anomaly & Data-Quality Monitor
 
-A production-shaped streaming anomaly and data-quality monitoring system built on a
-**sliding-window Approximate Kernel Density Estimation (SW-AKDE) sketch**, applied to
-industrial equipment sensor data and exposed to AI agents through an MCP server.
+[![CI](https://github.com/vaishnavi1064/sliding-window-kde-monitor/actions/workflows/ci.yml/badge.svg)](https://github.com/vaishnavi1064/sliding-window-kde-monitor/actions/workflows/ci.yml)
+
+A streaming anomaly and data-quality monitor for industrial equipment sensors, built on a
+**sliding-window Approximate Kernel Density Estimation (SW-AKDE) sketch** with a C++17 hot
+path, a Kafka → Prometheus/Grafana pipeline, and an MCP server that exposes asset health to
+AI agents.
+
+**Scale, stated up front:** single node, single asset, **0.1 Hz**, 1.5M readings. This is a
+corrected implementation and an applicability study of a 2025 algorithm — not a distributed
+system, and not new research ([what this is, and is not](#what-this-is-and-is-not)).
+
+## At a glance
+
+| | Result | Source |
+|---|---|---|
+| **Native core** | C++17 behind pybind11: **~10–20x** faster updates, ~6–14x queries, **2.2x** smaller — and **bit-for-bit identical** to the Python oracle, enforced on CI across gcc and MSVC | [PERFORMANCE.md](docs/PERFORMANCE.md) |
+| **Pipeline speed** | One full 1,516,948-reading MetroPT-3 pass: **23.9 min → 1.1 min** (~20x) | [PERFORMANCE.md](docs/PERFORMANCE.md) |
+| **Correctness** | Auditing the paper and its reference implementation turned up **seven** real defects — two of them in the *published algorithm*. All fixed here, each pinned by a test | [PROJECT_RECORD.md §4](docs/PROJECT_RECORD.md) |
+| **Detection** | All four documented failures at a 5% alarm budget: **p = 0.004** at a 3-hour horizon, **p = 0.050** at 24 hours, against a matched-budget random control. Loosen the budget to the Phase-2 operating threshold (16.9% alerting) and it falls to chance, p = 0.499. The sketch matches exact windowed KDE to within noise at every horizon | [EVALUATION.md](docs/EVALUATION.md) |
+| **The finding** | At seven channels the sketch costs **26–236x more memory than simply storing the window**. The crossover is `dim > ~5 x rows` on the Python core and `~2.3 x rows` with the C++ core — either way this application sits outside the regime where the algorithm pays off. We report the boundary rather than engineer around it | [EVALUATION.md §4](docs/EVALUATION.md) |
+| **Tests** | **130 green** on CI (Linux/gcc and Windows/MSVC), 93 + 37 skipped in the no-compiler job | [PROJECT_RECORD.md §3.7](docs/PROJECT_RECORD.md) |
+
+## Quick start
+
+The sketch itself needs only numpy, so a fresh clone runs its full validation suite in seconds:
+
+```bash
+py -3.12 -m venv .venv                               # .venv/bin/python on Linux/macOS
+.venv/Scripts/python.exe -m pip install -e ".[dev]"
+.venv/Scripts/python.exe -m pytest                   # 93 passed, 37 skipped (no native core)
+```
+
+Then add the optimized core, or bring up the whole monitoring stack:
+
+```bash
+make native   # compile the C++17 core (needs a C++17 compiler); pytest is then 130 passed
+make up       # Kafka + consumer + Prometheus + Grafana + Alertmanager + Postgres
+```
+
+Full instructions — the dataset, the MCP server, and a `make`-free equivalent for every
+target — are under [Running it](#running-it).
 
 ## What this is (and is not)
 
@@ -17,11 +55,12 @@ theirs.
 
 1. **Engineering** — the authors' reference implementation is an unoptimized research
    prototype. We re-implement the sketch cleanly, with tests, validated against
-   sketch-independent ground truth, plus an optimized C++17 core that is ~10–20x faster
-   than *that already-vectorized Python implementation* — not than a naive one — and
-   bit-for-bit identical to it.
+   sketch-independent ground truth, plus an optimized C++17 core that is ~10–20x faster on
+   updates (~6–14x on queries) than *that already-vectorized Python implementation* — not
+   than a naive one — and bit-for-bit identical to it.
 2. **Application** — the paper never applies this to industrial-sensor anomaly detection.
-   We do, against a real dataset with documented ground-truth failures.
+   We do, against a real dataset with documented ground-truth failures, and the honest
+   result is that this workload sits on the wrong side of the algorithm's memory crossover.
 
 We do not claim a new algorithm.
 
@@ -35,44 +74,130 @@ We do not claim a new algorithm.
 | 2 | Kafka streaming, Prometheus/Grafana/Alertmanager | Done — alert verified firing end to end |
 | 3 | Anomaly detector + MetroPT evaluation | Done |
 | 4 | MCP server | Done — three tools verified end to end |
-| 5 | C++17 + pybind11 optimized core | Done — ~10–20x over the optimized Python core, bitwise-identical |
+| 5 | C++17 + pybind11 optimized core | Done — ~10–20x on updates over the optimized Python core, bitwise-identical |
 | 6 | Adaptive window size (research extension) | Stretch |
 
 130 tests green, on CI as well as locally: 130 pass in each native-core job (Linux/gcc and
-Windows/MSVC) and 93 pass with 37 skipped in the job that installs no native core. Engineering log in [`docs/PERFORMANCE.md`](docs/PERFORMANCE.md); findings from
-running against the real data in [`docs/DATA_NOTES.md`](docs/DATA_NOTES.md); evaluation
-methodology in [`docs/EVALUATION.md`](docs/EVALUATION.md).
+Windows/MSVC) and 93 pass with 37 skipped in the job that installs no native core.
 
-## Headline result
+| Document | What is in it |
+|---|---|
+| [`docs/PERFORMANCE.md`](docs/PERFORMANCE.md) | Engineering log: profiles, throughput, the native core, verification state |
+| [`docs/EVALUATION.md`](docs/EVALUATION.md) | Evaluation methodology, detection results, the memory boundary |
+| [`docs/PROJECT_RECORD.md`](docs/PROJECT_RECORD.md) | Every verified number with its source, the seven findings, and what is *not* claimed |
+| [`docs/REFERENCE_NOTES.md`](docs/REFERENCE_NOTES.md) | Line-level audit of the authors' reference implementation |
+| [`docs/DATA_NOTES.md`](docs/DATA_NOTES.md) | What the real data contradicted, and what it forced in the code |
 
-Full details in [`docs/EVALUATION.md`](docs/EVALUATION.md). Three things, and the
-third is the one that matters.
+## Results
+
+### 1. The native core
+
+C++17 behind pybind11, selected with `backend="native"`. The port was aimed by measurement
+rather than assumption: profiling put ~72% of update time in the exponential histogram and
+none in the hashing (already a matmul), so C++ owns the cell array and NumPy keeps the hashing.
+
+Synthetic stream, `dim=15`, `k=5`, `window=256`; the Python column is re-measured in the same
+run, so each ratio is internally consistent (`make bench-native`):
+
+| rows | Python upd/s | native upd/s | speedup | native p50 | native p99 | hash share |
+|---:|---:|---:|---:|---:|---:|---:|
+| 100 | 9,741 | 100,054 | **10.3x** | 9.2 µs | 14.7 µs | 45.2% |
+| 200 | 4,574 | 55,853 | **12.2x** | 16.1 µs | 27.2 µs | 35.3% |
+| 400 | 2,009 | 27,887 | **13.9x** | 32.8 µs | 92.0 µs | 27.9% |
+| 800 | 688 | 13,079 | **19.0x** | 69.9 µs | 130.6 µs | 22.0% |
+| 1600 | 308 | 5,617 | **18.3x** | 159.2 µs | 346.3 µs | 17.4% |
+| 3200 | 113 | 1,867 | **16.6x** | 457.6 µs | 923.6 µs | 15.1% |
+
+On real MetroPT-3 readings at the settings the pipeline actually runs (`rows=400`, `k=3`,
+`window=3600`, 150,000 readings):
+
+| core | cells | cell memory | RSS delta | bytes/cell | upd/s | full 1.5M pass |
+|---|---:|---:|---:|---:|---:|---:|
+| Python | 83,920 | 63.9 MB | 113.9 MB | 761 | 1,060 | 23.9 min |
+| native | 83,920 | 29.0 MB | 54.8 MB | 345 | 22,659 | **1.1 min** |
+| | identical | **2.2x smaller** | **2.1x smaller** | | **21.4x** | |
+
+The cell counts being **identical** is the point of that table: a memory win from holding fewer
+cells would be a semantic difference, not an engineering one. Four things keep the rest of it
+honest, all detailed in [`docs/PERFORMANCE.md`](docs/PERFORMANCE.md):
+
+- **The speedup is quoted against our own optimized Python core.** Phase 1.5's 2.9x
+  vectorization is *not* folded in. The two multiply to ~30–55x against the original scalar
+  implementation, but that is not what this table reports.
+- **Timed figures move between runs.** An earlier run of the same script gave 10.9–22.1x on
+  updates; per-row ratios shift by up to ~3x on a non-isolated desktop. The defensible claim
+  is **~10–20x on updates and ~6–14x on queries**, not any single cell. The *structural*
+  memory figures reproduced exactly, to the byte.
+- **"Hash share" is the ceiling.** It is the fraction of native update time still spent in
+  the Python hash bank that both cores share — 45% at `rows=100`. Getting past ~20x means
+  porting the hashing too, and only then.
+- **The p99 tail was checked, not assumed.** The obvious culprit — the once-per-window
+  compaction sweep — is wrong: removing compaction moves p99 by 5% in the *opposite*
+  direction. It is ordinary scheduling jitter, and compaction really is O(1) amortised.
+
+Parity with the Python oracle is asserted as bit-for-bit equality, not a tolerance; see
+[Correctness](#correctness).
+
+### 2. Detection quality
+
+Full details in [`docs/EVALUATION.md`](docs/EVALUATION.md). With only four documented
+failures, precision and recall are not reported — one event either way moves recall by 25%.
+Every operating point is instead calibrated against a null that places the *same number of
+alarms* at random, 2,000 times over, because with a 24-hour horizon a detector that alarms
+about once a day catches everything by construction.
 
 **The sketch works, and matches exact windowed KDE to within noise.** At equal alarm
-budgets, SW-AKDE and brute-force exact KDE agree at every operating point (4/4 failures
-at p = 0.050 versus p = 0.049). Un-windowed RACE is genuinely worse (3/4 at the same
-budget), so sliding-window semantics do buy something real.
+budgets, SW-AKDE and brute-force exact KDE agree at every operating point and at every
+horizon. Un-windowed RACE is genuinely worse — 3/4 rather than 4/4, everywhere — so
+sliding-window semantics do buy something real. Each method thresholded at its own 5%
+quantile, so all three carry the same alarm budget (`make evaluate`):
+
+| horizon | SW-AKDE | exact windowed KDE | un-windowed RACE |
+|---|---|---|---|
+| 3h | 4/4, **p = 0.004** | 4/4, p = 0.004 | 3/4, p = 0.058 |
+| 6h | 4/4, **p = 0.009** | 4/4, p = 0.009 | 3/4, p = 0.090 |
+| 12h | 4/4, **p = 0.025** | 4/4, p = 0.024 | 3/4, p = 0.146 |
+| 24h | 4/4, **p = 0.050** | 4/4, p = 0.049 | 3/4, p = 0.284 |
+| 48h | 4/4, p = 0.150 | 4/4, p = 0.135 | 3/4, p = 0.545 |
+
+The two left-hand columns never differ by more than 0.015, which is the positive result for
+the engineering lever: **approximation costs essentially nothing in detection quality.**
+
+![Operating points: SW-AKDE against exact windowed KDE and un-windowed RACE at matched alarm budgets](docs/figures/operating_points.png)
 
 **It detects at onset, but does not predict.** All four documented failures are found at
 a 3-hour horizon with p = 0.004 — clearly better than chance — but with lead times of
-about zero. The large positive leads that appear at wider horizons vanish at 3h, meaning
-they were the wider window catching unrelated alarms. Two of the four failures have
-almost no signature in these sensors beforehand (+0.62σ and +0.24σ), so no
-density-based detector could predict them.
+about zero (mean −0.6h). The large positive leads at wider horizons (+10.1h at 24h) vanish
+at 3h, meaning they were the wider window catching unrelated alarms rather than genuine
+early warning. Two of the four failures have almost no signature in these sensors
+beforehand (+0.62σ and +0.24σ), so no density-based detector could predict them.
 
-**At seven channels, the sketch costs 26–236× more memory than simply storing the
+**And it is only significant on a tight alarm budget.** Every p-value above is measured at
+a 5% budget. The threshold actually fixed in Phase 2 — 1.30, chosen from synthetic-fault
+tuning before these failures were examined — alerts **16.9%** of the time: it still finds
+4/4, but chance alone finds 3.38/4, so **p = 0.499**. Detection here is real but narrow,
+and it is bounded by the horizon *and* the budget together. Two caveats belong with that:
+the table scans 5 horizons x 5 budgets, so p = 0.004 is the best cell of an exploratory
+sweep rather than a pre-registered result, and strict Bonferroni over 25 cells
+(α = 0.002) would not pass.
+
+### 3. The finding: at seven channels the sketch costs more memory than the window it replaces
+
+**At seven channels, the sketch costs 26–236x more memory than simply storing the
 window** — and this is the contribution. Its footprint is independent of dimension while
 exact storage grows with it, so there is a crossover, measured here at roughly
 
-> `dim > 5 × rows`
+> `dim > 5 x rows`
 
-on the Python core, or `dim > ~2.3 × rows` on the leaner C++ one — the boundary is linear in
+on the Python core, or `dim > ~2.3 x rows` on the leaner C++ one — the boundary is linear in
 bytes-per-cell, so a 2.2x cheaper cell moves it by that factor and no further. Seven channels
 sits two orders of magnitude below either.
 
-The 26–236× multiples are **near-trough samples**: compaction sweeps once per window, so the
-live cell count sawtooths roughly 2× within each cycle and these figures are sampled near the
-low point. On a peak basis `rows=400` is closer to **~385×** — which is itself a single observed
+![Memory crossover: the sketch's footprint is flat in dimension, storing the window is not](docs/figures/memory_crossover.png)
+
+The 26–236x multiples are **near-trough samples**: compaction sweeps once per window, so the
+live cell count sawtooths roughly 2x within each cycle and these figures are sampled near the
+low point. On a peak basis `rows=400` is closer to **~385x** — which is itself a single observed
 sample 3,000 ticks into one cycle, **not a proven maximum**, since `memory_check` does not track
 a running high-water mark. That makes the negative result stronger, not weaker; see
 [`docs/PROJECT_RECORD.md`](docs/PROJECT_RECORD.md) §9.1.
@@ -92,13 +217,27 @@ measured, is more useful than a demonstration that avoided the question.
 
 We validate bottom-up against ground truth that involves no sketch at all, never against the
 reference implementation's outputs — because auditing that implementation turned up **seven** real
-bugs, documented with evidence in [`docs/REFERENCE_NOTES.md`](docs/REFERENCE_NOTES.md) and
-enumerated in full in [`docs/PROJECT_RECORD.md`](docs/PROJECT_RECORD.md) §4. Some trace back to the
-paper's own pseudocode rather than just the code:
+defects, documented with evidence in [`docs/REFERENCE_NOTES.md`](docs/REFERENCE_NOTES.md) and
+enumerated in full in [`docs/PROJECT_RECORD.md`](docs/PROJECT_RECORD.md) §4. Two of them trace back
+to the paper's own pseudocode rather than just the code.
 
-**Two are in the published algorithm itself**, not only in the reference code — both in
-Algorithm 2 of arXiv:2510.23039 (§4.1), and both active at the `p = 1` setting the paper
-uses for all its experiments:
+| | Defect | Where it lives | Active at the paper's own setting? |
+|---|---|---|---|
+| **A** | Every cell silently drops its first arrival | **Algorithm 2** and `Ang_hash_AKDE.py` 25-28 | **Yes** |
+| **F** | Cold cells never expire, so their density is frozen forever | **Algorithm 2** and `Exponential_Histogram.py` 56-57 | **Yes** |
+| **B** | Single-step expiry under-evicts — `total` drifts to **4x** the true count on a long-gap sequence | `Exponential_Histogram.py` 27 | Yes |
+| — | Window-boundary off-by-one: `<` keeps `N+1` elements where Problem 1.2 defines `N` | `Exponential_Histogram.py` 27 | Yes |
+| **E** | Angular cell code encodes only Hamming weight, losing *which* hashes fired | `Ang_hash_AKDE.py`, `RACE_19.py` | No — latent, bites at `k > 1` |
+| **G** | Euclidean cell code sums the `k` hashes, collapsing 4,000 points into 101 cells | `L2_hash_AKDE.py` 30-33 | No — latent |
+| **H** | The L2 brute-force ground truth omits `** k` | `window_size.py` 27-37 and copies | No — latent |
+
+That is 2 + 3 + 2 = **seven**. Findings C and D from the audit are deliberately not counted: C is
+the reference being *correct* (the paper does specify the mean for SW-AKDE), and D is our
+validation strategy rather than a defect in the source material.
+
+**The two in the published algorithm.** Both are in Algorithm 2 of arXiv:2510.23039 (§4.1), and
+both are active at the concatenation setting the paper uses for all its experiments (`k = 1` in
+our notation; the paper calls it `p`):
 
 - **Finding A — every cell silently drops its first arrival.** Algorithm 2's
   preprocessing loop reads `if A[i,j] is empty then Create an Exponential Histogram …
@@ -122,31 +261,10 @@ uses for all its experiments:
   The same lazy expiry also leaks memory, quantified in
   [`docs/PERFORMANCE.md`](docs/PERFORMANCE.md).
 
-**Three are code-only defects that do not affect the paper's results:**
-
-- **Findings E, G, H** — the LSH cell code discards information (angular: only Hamming weight
-  survives; Euclidean: the k hashes are summed, collapsing 4,000 points into 101 cells), and the
-  L2 ground-truth helper omits an exponent.
-
-These three are **latent**: the paper sets the concatenation parameter to 1 for all
-experiments, and at `k=1` all three are inert. They break only at `k>1` — the regime the
-LSH-amplification argument is actually about. We fixed them because we intend to use
-`k>1`. **The paper's published numbers stand**, and we make no claim otherwise.
-
-**The remaining two are sliding-window semantics defects in the reference's exponential
-histogram**, both active at any `k` and both caught by tier-1 tests rather than by reading:
-
-- **Finding B — single-step expiry under-evicts.** One cell's histogram is only touched when that
-  cell is hit, so consecutive calls can be arbitrarily far apart in the shared clock and more than
-  one bucket can be expired at once. The reference's single `if` evicts only the oldest, which lets
-  `total` drift to **4×** the brute-force count on a long-gap sequence.
-- **A window-boundary off-by-one.** The reference's `<` keeps a bucket whose timestamp equals
-  `t − window_size`, giving `N+1` elements where the paper's own Problem 1.2 defines `N`. Ours uses
-  `<=`.
-
-That is 2 + 3 + 2 = **seven**. Findings C and D are deliberately not counted: C is the reference
-being *correct* (the paper does specify the mean for SW-AKDE), and D is our validation strategy
-rather than a defect in the source material.
+**The three that are latent.** E, G and H are code-only defects, and the paper sets the
+concatenation parameter to 1 for all experiments — at which all three are inert. They break only
+at `k > 1`, the regime the LSH-amplification argument is actually about. We fixed them because we
+intend to use `k > 1`. **The paper's published numbers stand**, and we make no claim otherwise.
 
 The distinction matters and we keep it throughout: A and F are corrections to the
 *published algorithm* at its own settings; E, G and H are bugs in the *reference code*
@@ -169,7 +287,7 @@ That parity is verified on CI, not just locally: all 37 parity tests execute and
 native-core jobs (gcc 13.3.0 and MSVC 1951) and skip in the pure-Python job. See "Verification
 state" in [`docs/PERFORMANCE.md`](docs/PERFORMANCE.md) for exactly what is and is not established.
 
-## Getting started
+## Running it
 
 The sketch on its own needs only numpy:
 
@@ -269,7 +387,7 @@ streaming/  producer, consumer, feature extraction, data-quality checks, scoring
 docker/     Dockerfile and the Prometheus / Grafana / Alertmanager configuration
 scripts/    dataset download, throughput benchmarks, native build driver
 tests/      the three validation tiers, native parity, plus streaming component tests
-docs/       reference audit, performance log, data findings, and the source paper
+docs/       reference audit, performance log, evaluation, project record, and the source paper
 CLAUDE.md   full project brief: novelty framing, findings, build plan, tech-stack rationale
 ```
 
@@ -282,7 +400,7 @@ maintenance report. The dataset is **not committed** — run `make data`.
 Two things measurement contradicted, both detailed in
 [`docs/DATA_NOTES.md`](docs/DATA_NOTES.md): the sampling rate is **0.1 Hz (every 10s), not
 1 Hz** as the documentation says, and normal density is hugely variable because the
-compressor cycles — enough that a naive z-score misses a 9× density collapse entirely.
+compressor cycles — enough that a naive z-score misses a 9x density collapse entirely.
 
 ## References
 

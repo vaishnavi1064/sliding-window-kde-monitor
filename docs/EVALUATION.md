@@ -145,15 +145,29 @@ semantics do buy something real here, which supports the source paper's claim.
 ### 2. It detects at onset; it does not predict
 
 The prediction horizon changes the story completely, so it has to be reported
-rather than chosen:
+rather than chosen. Every row below is at the **5% alarm budget**, each method
+thresholded at its own 5% quantile (2.81 for SW-AKDE, 2.80 for exact), so the two
+columns are directly comparable. Leads are SW-AKDE's; exact's differ only in the
+last decimal (+27.2h against +27.1h at 48h, identical elsewhere).
 
-| horizon | events | mean lead | p | per-event lead |
+| horizon | SW-AKDE | exact windowed KDE | SW-AKDE mean lead | SW-AKDE per-event lead |
 |---|---|---|---|---|
-| 3h | 4/4 | −0.6h | **0.004** | −2, −0, −0, −0 |
-| 6h | 4/4 | −0.6h | 0.009 | −2, −0, −0, −0 |
-| 12h | 4/4 | −0.6h | 0.024 | −2, −0, −0, −0 |
-| 24h | 4/4 | +10.1h | 0.049 | +19, +22, −0, −0 |
-| 48h | 4/4 | +27.2h | 0.135 | +19, +43, +47, −0 |
+| 3h | 4/4, **p = 0.004** | 4/4, p = 0.004 | −0.6h | −2, −0, −0, −0 |
+| 6h | 4/4, p = 0.009 | 4/4, p = 0.009 | −0.6h | −2, −0, −0, −0 |
+| 12h | 4/4, p = 0.025 | 4/4, p = 0.024 | −0.6h | −2, −0, −0, −0 |
+| 24h | 4/4, p = 0.050 | 4/4, p = 0.049 | +10.1h | +19, +22, −0, −0 |
+| 48h | 4/4, p = 0.150 | 4/4, p = 0.135 | +27.1h | +19, +43, +47, −0 |
+
+*Correction (2026-09-05).* This table previously carried a single unlabelled `p`
+column holding **exact windowed KDE's** values (0.004 / 0.009 / 0.024 / 0.049 /
+0.135) while the surrounding prose attributed them to the sketch, and its 24h
+cell (0.049) therefore contradicted §1's correctly-labelled swakde figure of
+0.050. Both methods' numbers are now shown under their own headers, regenerated
+from the same committed caches with `python -m scripts.horizon_sensitivity`.
+Nothing moved: the chance calibration is seeded (`seed=0`, 2,000 trials) and
+exact still reproduces its five p-values to the digit. The conclusion is
+unchanged — the two methods agree to within 0.015 at every horizon, which is
+precisely §1's finding.
 
 At a tight 3-hour horizon the detector finds all four failures with p = 0.004 —
 clearly better than chance. But the lead times are **≈0**: it fires *as* each
@@ -170,8 +184,10 @@ chance test. Numbers in
 [`figures/scores_around_failures.csv`](figures/scores_around_failures.csv).*
 
 **This is a detection system, not a prediction system, on this data.** The
-"+17h mean lead" that a naive reading of the 24h row would support is not
-supported once chance is accounted for.
+"+10h mean lead" that a naive reading of the 24h row would support is not
+supported once chance is accounted for. (This sentence previously said "+17h",
+which matched no cell of the table above — 16.79h is the 20% budget's mean lead
+in `figures/operating_points.csv`, not the 24h row's.)
 
 Caveat: this table scans 5 horizons x 5 thresholds, so quoting the best cell is
 multiple comparisons over four events. The low values cluster consistently at

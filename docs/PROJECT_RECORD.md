@@ -396,15 +396,21 @@ So the sketch matches exact windowed KDE to within noise (**0.0495 vs 0.0490** a
 approximation costs essentially nothing in detection quality. Un-windowed RACE is worse where it
 matters (3/4 at 5%), which supports the paper's sliding-window claim.
 
-Horizon sensitivity (`docs/EVALUATION.md` §2):
+Horizon sensitivity (`docs/EVALUATION.md` §2), all rows at the **5% alarm budget**, each method
+at its own 5% quantile threshold (SW-AKDE 2.81, exact 2.80). Leads are SW-AKDE's:
 
-| Horizon | Events | Mean lead | p | Per-event lead |
-|---|---:|---:|---:|---|
-| **3 h** | **4/4** | **−0.6 h** | **0.004** | −2, −0, −0, −0 |
-| 6 h | 4/4 | −0.6 h | 0.009 | −2, −0, −0, −0 |
-| 12 h | 4/4 | −0.6 h | 0.024 | −2, −0, −0, −0 |
-| 24 h | 4/4 | +10.1 h | 0.049 | +19, +22, −0, −0 |
-| 48 h | 4/4 | +27.2 h | 0.135 | +19, +43, +47, −0 |
+| Horizon | SW-AKDE | exact | Mean lead | Per-event lead | Kind |
+|---|---:|---:|---:|---|---|
+| **3 h** | **4/4, p = 0.004** | 4/4, p = 0.004 | **−0.6 h** | −2, −0, −0, −0 | S |
+| 6 h | 4/4, p = 0.009 | 4/4, p = 0.009 | −0.6 h | −2, −0, −0, −0 | S |
+| 12 h | 4/4, p = 0.025 | 4/4, p = 0.024 | −0.6 h | −2, −0, −0, −0 | S |
+| 24 h | 4/4, p = 0.050 | 4/4, p = 0.049 | +10.1 h | +19, +22, −0, −0 | S |
+| 48 h | 4/4, p = 0.150 | 4/4, p = 0.135 | +27.1 h | +19, +43, +47, −0 | S |
+
+**Corrected 2026-09-05 — see §9.6.** The `p` column previously held *exact*'s values under a
+heading that attributed them to the sketch, contradicting the swakde figure of 0.0495 in the
+operating-points table above. These are `S` (structural): the chance calibration is seeded, so
+both columns reproduce exactly.
 
 Chance calibration: **2,000** random trials per operating point (`docs/EVALUATION.md` line 63).
 The control that mattered most: un-windowed RACE at a fixed threshold of 1.3 detects **4/4** — while
@@ -723,9 +729,9 @@ same order, so there is no floating-point reordering to excuse a difference.
 
 ## 9. Internal disagreements — investigated and resolved
 
-All four substantive disagreements found while writing this document have now been traced to root
-cause and the source docs corrected. Recorded here because the *reason* each arose is more useful
-than the fix.
+All five substantive disagreements — four found while writing this document, a fifth (§9.6) found
+later while reconciling `README.md` against it — have been traced to root cause and the source docs
+corrected. Recorded here because the *reason* each arose is more useful than the fix.
 
 ### 9.1 RESOLVED — the 761 vs 787 bytes-per-cell split was a compaction-cycle phase artifact
 
@@ -798,6 +804,41 @@ breakdown extended to 2 + 3 + 2 so its arithmetic closes.
 `CLAUDE.md` §11 states MetroPT is sampled "every 10s (0.1 Hz — measured, despite the dataset docs
 saying 1 Hz)", which agrees with `docs/DATA_NOTES.md` §1. Recorded only because the original brief
 said 1 Hz and the correction propagated; no live conflict remains.
+
+### 9.6 RESOLVED — §2's horizon table was the exact baseline's numbers wearing the sketch's label
+
+Found 2026-09-05 while reconciling `README.md` against its sources. `docs/EVALUATION.md` §2
+presented a single unlabelled `p` column as the detector's horizon sensitivity. Re-running
+`scripts/horizon_sensitivity.py` off the same committed caches gave **swakde** 0.004 / 0.009 /
+**0.025** / **0.050** / **0.150** but **exact** 0.004 / 0.009 / 0.024 / 0.049 / 0.135 — and the
+doc matched *exact* in all five p-values and in both distinguishing mean leads (+10.1 h, +27.2 h).
+
+**It was mislabelling, not drift**, and three independent checks establish that:
+
+1. **The scorer never changed.** `streaming/scoring.py`, `evaluation/metrics.py` and
+   `evaluation/labels.py` were last touched in `531ba86` — the very commit that wrote the table.
+   The only later edit to the evaluation path, `4ab5ef8`, added a `--backend` argument to
+   `scripts/run_evaluation.py` and touched no scoring logic.
+2. **The cache never changed.** `data/eval_swakde_rows400_k3_w3600.parquet` is dated
+   2026-08-03 10:35:49; `531ba86` landed at 10:46:04, eleven minutes later. The table was written
+   against the same bytes that are on disk today.
+3. **The seeded calibration is stable.** `chance_detection` runs 2,000 trials at `seed=0`, and
+   today's `exact` run reproduces the doc's five p-values to the digit, a month on.
+
+The tell was internal: §1 correctly reported swakde at **0.050** and exact at **0.049** for the
+same 5% budget at the default 24 h horizon, while §2's 24 h cell said 0.049. Both sections were
+right about *a* method; only §2 named the wrong one. `figures/operating_points.csv` settles it —
+`swakde,0.05,…,0.0495` against `exact,0.05,…,0.0490`.
+
+Corrected in `docs/EVALUATION.md` §2 and in §3.5 of this document by giving each method its own
+labelled column.
+**No conclusion moves**: the two agree to within 0.015 at every horizon, which is exactly §1's
+result. Also fixed in passing: §2's closing sentence cited a "+17h mean lead" for the 24 h row,
+which is the 20% budget's 16.79 h from the CSV, not the 24 h row's +10.1 h.
+
+**Fragility this exposes, not fixed:** these tables are transcribed by hand from script output, so
+a column can be relabelled or a value can go stale without anything failing. The same weakness is
+recorded for the figures in §9.2. Wiring both to the measurement output would close it.
 
 ---
 
