@@ -24,10 +24,35 @@ system, and not new research ([what this is, and is not](#what-this-is-and-is-no
 
 ## Architecture
 
+### System architecture
+
 ![System architecture](docs/architecture.svg)
 
 *Docker Compose packages the stack, GitHub Actions runs CI on every push, and MLflow tracks
 evaluation runs.*
+
+### Detection logic
+
+![Detection logic per reading](docs/detection_flow.svg)
+
+*The highlighted step is where the sliding window lives: counts outside the window expire, so
+density always describes recent behaviour rather than all history. That per-cell expiry is also
+what makes the sketch expensive at this dimensionality — every live cell carries its own
+exponential histogram — which is the memory boundary in
+[`docs/EVALUATION.md`](docs/EVALUATION.md) §4.*
+
+### Design notes
+
+Data is replayed through Kafka rather than read from a file so the sketch is exercised under
+real streaming conditions — one reading at a time, with a monotonic logical clock driving window
+expiry — not batch. The sketch has two interchangeable backends behind one interface: a
+pure-Python core that stays the default and the correctness oracle, and a C++17 core selected
+with `backend="native"` for throughput; both are held to bit-for-bit parity in CI.
+Prometheus/Grafana/Alertmanager form the monitoring surface, and an MCP server exposes asset
+state so an AI agent can query it. The system is deliberately single-node, single-asset, 0.1 Hz:
+the design target is the streaming and correctness shape, not scale, so Spark, Kubernetes, and
+multi-service orchestration were left out as unjustified for this volume — a multi-asset,
+partition-per-asset extension is noted as future work.
 
 ## Quick start
 

@@ -1,0 +1,61 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 560 566" width="560" height="566"
+     font-family="system-ui, -apple-system, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif"
+     role="img" aria-labelledby="title desc">
+  <title id="title">Detection logic, per reading</title>
+  <desc id="desc">Each sensor reading is hashed into LSH cells, the sliding-window counts are
+    updated so old readings expire, density is estimated as the mean over rows, that density is
+    scored against a rolling baseline, and an alert fires if the score crosses the threshold.</desc>
+
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5"
+            markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#6e7781"/>
+    </marker>
+  </defs>
+
+  <!-- 1 -->
+  <rect x="100" y="16" width="360" height="64" rx="8"
+        fill="#6e7781" fill-opacity="0.06" stroke="#6e7781" stroke-width="1.5"/>
+  <text x="280" y="43" text-anchor="middle" font-size="15" font-weight="600" fill="#6e7781">Sensor reading</text>
+  <text x="280" y="63" text-anchor="middle" font-size="11.5" fill="#7d8590">15-channel vector</text>
+
+  <path d="M 280 80 L 280 108" stroke="#6e7781" stroke-width="1.5" fill="none" marker-end="url(#arrow)"/>
+
+  <!-- 2 -->
+  <rect x="100" y="110" width="360" height="64" rx="8"
+        fill="#6e7781" fill-opacity="0.06" stroke="#6e7781" stroke-width="1.5"/>
+  <text x="280" y="137" text-anchor="middle" font-size="15" font-weight="600" fill="#6e7781">Hash into cells</text>
+  <text x="280" y="157" text-anchor="middle" font-size="11.5" fill="#7d8590">LSH: L rows × k bits</text>
+
+  <path d="M 280 174 L 280 202" stroke="#6e7781" stroke-width="1.5" fill="none" marker-end="url(#arrow)"/>
+
+  <!-- 3: the sliding window itself, highlighted; the mechanism behind the negative result -->
+  <rect x="100" y="204" width="360" height="64" rx="8"
+        fill="#a17400" fill-opacity="0.12" stroke="#a17400" stroke-width="2.5"/>
+  <text x="280" y="231" text-anchor="middle" font-size="15" font-weight="700" fill="#a17400">Update window counts</text>
+  <text x="280" y="251" text-anchor="middle" font-size="11.5" fill="#a17400">old readings expire</text>
+
+  <path d="M 280 268 L 280 296" stroke="#6e7781" stroke-width="1.5" fill="none" marker-end="url(#arrow)"/>
+
+  <!-- 4 -->
+  <rect x="100" y="298" width="360" height="64" rx="8"
+        fill="#6e7781" fill-opacity="0.06" stroke="#6e7781" stroke-width="1.5"/>
+  <text x="280" y="325" text-anchor="middle" font-size="15" font-weight="600" fill="#6e7781">Estimate density</text>
+  <text x="280" y="345" text-anchor="middle" font-size="11.5" fill="#7d8590">mean over L rows</text>
+
+  <path d="M 280 362 L 280 390" stroke="#6e7781" stroke-width="1.5" fill="none" marker-end="url(#arrow)"/>
+
+  <!-- 5 -->
+  <rect x="100" y="392" width="360" height="64" rx="8"
+        fill="#6e7781" fill-opacity="0.06" stroke="#6e7781" stroke-width="1.5"/>
+  <text x="280" y="419" text-anchor="middle" font-size="15" font-weight="600" fill="#6e7781">Score vs baseline</text>
+  <text x="280" y="439" text-anchor="middle" font-size="11.5" fill="#7d8590">density drop = signal</text>
+
+  <path d="M 280 456 L 280 484" stroke="#6e7781" stroke-width="1.5" fill="none" marker-end="url(#arrow)"/>
+
+  <!-- 6 -->
+  <rect x="100" y="486" width="360" height="64" rx="8"
+        fill="#6e7781" fill-opacity="0.06" stroke="#6e7781" stroke-width="1.5"/>
+  <text x="280" y="513" text-anchor="middle" font-size="15" font-weight="600" fill="#6e7781">Alert</text>
+  <text x="280" y="533" text-anchor="middle" font-size="11.5" fill="#7d8590">fires if score &gt; threshold</text>
+</svg>
