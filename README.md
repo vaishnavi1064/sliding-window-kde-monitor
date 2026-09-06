@@ -22,6 +22,13 @@ system, and not new research ([what this is, and is not](#what-this-is-and-is-no
 | **The finding** | At seven channels the sketch costs **26–236x more memory than simply storing the window**. The crossover is `dim > ~5 x rows` on the Python core and `~2.3 x rows` with the C++ core — either way this application sits outside the regime where the algorithm pays off. We report the boundary rather than engineer around it | [EVALUATION.md §4](docs/EVALUATION.md) |
 | **Tests** | **130 green** on CI (Linux/gcc and Windows/MSVC), 93 + 37 skipped in the no-compiler job | [PROJECT_RECORD.md §3.7](docs/PROJECT_RECORD.md) |
 
+## Architecture
+
+![System architecture](docs/architecture.svg)
+
+*Docker Compose packages the stack, GitHub Actions runs CI on every push, and MLflow tracks
+evaluation runs.*
+
 ## Quick start
 
 The sketch itself needs only numpy, so a fresh clone runs its full validation suite in seconds:

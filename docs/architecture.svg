@@ -1,0 +1,76 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 880 574" width="880" height="574"
+     font-family="system-ui, -apple-system, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif"
+     role="img" aria-labelledby="title desc">
+  <title id="title">System architecture</title>
+  <desc id="desc">MetroPT-3 sensor data flows into a Kafka replay topic, then a stream consumer,
+    then the SW-AKDE sketch, which fans out to monitoring, an MCP server, and storage.</desc>
+
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5"
+            markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#6e7781"/>
+    </marker>
+  </defs>
+
+  <!-- 1. Source -->
+  <rect x="280" y="16" width="320" height="64" rx="8"
+        fill="#6e7781" fill-opacity="0.06" stroke="#6e7781" stroke-width="1.5"/>
+  <text x="440" y="43" text-anchor="middle" font-size="15" font-weight="600" fill="#6e7781">MetroPT-3 sensor data</text>
+  <text x="440" y="63" text-anchor="middle" font-size="11.5" fill="#7d8590">1.5M readings · 0.1 Hz · 7 analog channels</text>
+
+  <path d="M 440 80 L 440 108" stroke="#6e7781" stroke-width="1.5" fill="none" marker-end="url(#arrow)"/>
+
+  <!-- 2. Kafka -->
+  <rect x="280" y="110" width="320" height="64" rx="8"
+        fill="#6e7781" fill-opacity="0.06" stroke="#6e7781" stroke-width="1.5"/>
+  <text x="440" y="137" text-anchor="middle" font-size="15" font-weight="600" fill="#6e7781">Kafka</text>
+  <text x="440" y="157" text-anchor="middle" font-size="11.5" fill="#7d8590">replay topic · accelerated playback</text>
+
+  <path d="M 440 174 L 440 202" stroke="#6e7781" stroke-width="1.5" fill="none" marker-end="url(#arrow)"/>
+
+  <!-- 3. Consumer -->
+  <rect x="280" y="204" width="320" height="64" rx="8"
+        fill="#6e7781" fill-opacity="0.06" stroke="#6e7781" stroke-width="1.5"/>
+  <text x="440" y="231" text-anchor="middle" font-size="15" font-weight="600" fill="#6e7781">Stream consumer</text>
+  <text x="440" y="251" text-anchor="middle" font-size="11.5" fill="#7d8590">logical clock · quality checks · scoring</text>
+
+  <path d="M 440 268 L 440 296" stroke="#6e7781" stroke-width="1.5" fill="none" marker-end="url(#arrow)"/>
+
+  <!-- 4. The sketch: central component, highlighted -->
+  <rect x="230" y="298" width="420" height="88" rx="10"
+        fill="#3b82c4" fill-opacity="0.12" stroke="#3b82c4" stroke-width="2.5"/>
+  <text x="440" y="328" text-anchor="middle" font-size="17" font-weight="700" fill="#3b82c4">SW-AKDE sketch</text>
+  <text x="440" y="350" text-anchor="middle" font-size="11.5" fill="#7d8590">RACE rows × LSH cells, each an exponential histogram</text>
+  <text x="440" y="370" text-anchor="middle" font-size="11.5" fill="#7d8590">Python core (oracle) · C++17 core, bit-for-bit identical</text>
+
+  <!-- 5. Fan-out -->
+  <path d="M 440 386 L 440 414" stroke="#6e7781" stroke-width="1.5" fill="none"/>
+  <path d="M 160 414 L 720 414" stroke="#6e7781" stroke-width="1.5" fill="none"/>
+  <path d="M 160 414 L 160 444" stroke="#6e7781" stroke-width="1.5" fill="none" marker-end="url(#arrow)"/>
+  <path d="M 440 414 L 440 444" stroke="#6e7781" stroke-width="1.5" fill="none" marker-end="url(#arrow)"/>
+  <path d="M 720 414 L 720 444" stroke="#6e7781" stroke-width="1.5" fill="none" marker-end="url(#arrow)"/>
+
+  <!-- 6a. Monitoring -->
+  <rect x="35" y="446" width="250" height="102" rx="8"
+        fill="#6e7781" fill-opacity="0.06" stroke="#6e7781" stroke-width="1.5"/>
+  <text x="160" y="474" text-anchor="middle" font-size="15" font-weight="600" fill="#6e7781">Monitoring</text>
+  <text x="160" y="497" text-anchor="middle" font-size="11.5" fill="#7d8590">Prometheus — metrics</text>
+  <text x="160" y="516" text-anchor="middle" font-size="11.5" fill="#7d8590">Grafana — dashboard</text>
+  <text x="160" y="535" text-anchor="middle" font-size="11.5" fill="#7d8590">Alertmanager — alert rules</text>
+
+  <!-- 6b. MCP -->
+  <rect x="315" y="446" width="250" height="102" rx="8"
+        fill="#6e7781" fill-opacity="0.06" stroke="#6e7781" stroke-width="1.5"/>
+  <text x="440" y="474" text-anchor="middle" font-size="15" font-weight="600" fill="#6e7781">MCP server</text>
+  <text x="440" y="497" text-anchor="middle" font-size="11.5" fill="#7d8590">get_asset_health</text>
+  <text x="440" y="516" text-anchor="middle" font-size="11.5" fill="#7d8590">list_recent_anomalies</text>
+  <text x="440" y="535" text-anchor="middle" font-size="11.5" fill="#7d8590">explain_alert</text>
+
+  <!-- 6c. Storage -->
+  <rect x="595" y="446" width="250" height="102" rx="8"
+        fill="#6e7781" fill-opacity="0.06" stroke="#6e7781" stroke-width="1.5"/>
+  <text x="720" y="474" text-anchor="middle" font-size="15" font-weight="600" fill="#6e7781">Storage</text>
+  <text x="720" y="497" text-anchor="middle" font-size="11.5" fill="#7d8590">PostgreSQL — alert history</text>
+  <text x="720" y="516" text-anchor="middle" font-size="11.5" fill="#7d8590">Parquet — raw stream</text>
+  <text x="720" y="535" text-anchor="middle" font-size="11.5" fill="#7d8590">and cached score series</text>
+</svg>
